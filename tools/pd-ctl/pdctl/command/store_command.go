@@ -45,6 +45,7 @@ func NewStoreCommand() *cobra.Command {
 	s.AddCommand(NewRemoveTombStoneCommand())
 	s.AddCommand(NewStoreLimitSceneCommand())
 	s.AddCommand(NewStoreCheckCommand())
+	s.AddCommand(NewUnsafeRecoverCommand())
 	s.Flags().String("jq", "", "jq query")
 	s.Flags().StringSlice("state", nil, "state filter")
 	return s
@@ -199,6 +200,73 @@ func NewStoreLimitSceneCommand() *cobra.Command {
 		Long:  "show or set the limit value for a scene, <type> can be 'add-peer'(default) or 'remove-peer'",
 		Run:   storeLimitSceneCommandFunc,
 	}
+}
+
+// Returns the unsafe recover command for the store command.
+func NewUnsafeRecoverCommand() *cobra.Command {
+	sc := &cobra.Command{
+		Use:   "unsafe-recover [<type>]",
+		Short: "Recover failed stores unsafely",
+		Long:  "Recover failed stores unsafely, <type> can be a list of store e.g. '<s1,s2,...>' or 'show' or 'history'",
+		Run:   unsafeRecoverCommandFunc,
+	}
+	sc.AddCommand(NewUnsafeRecoverShowCommand())
+	sc.AddCommand(NewUnsafeRecoverHistoryCommand())
+	return sc
+}
+
+// Returns the unsafe-recover show command for the unsafe-recover command.
+func NewUnsafeRecoverShowCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show",
+		Short: "Show the status of ongoing unsafe recoveries",
+		Run:   unsafeRecoverShowCommandFunc,
+	}
+}
+
+// Returns the unsafe-recover history command for the unsafe-recover command.
+func NewUnsafeRecoverHistoryCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "history",
+		Short: "Show the history log",
+		Run:   unsafeRecoverHistoryCommandFunc,
+	}
+}
+
+func unsafeRecoverCommandFunc(cmd *cobra.Command, args []string) {
+    var resp string
+    var err error
+    prefix := fmt.Sprintf("%s/unsafe-recover", storesPrefix)
+    resp, err = doRequest(cmd, prefix, http.MethodPost)
+    if err != nil {
+	cmd.Println(err)
+	return
+    }
+    cmd.Println(resp)
+}
+
+func unsafeRecoverShowCommandFunc(cmd *cobra.Command, args []string) {
+    var resp string
+    var err error
+    prefix := fmt.Sprintf("%s/unsafe-recover/show", storesPrefix)
+    resp, err = doRequest(cmd, prefix, http.MethodGet)
+    if err != nil {
+	cmd.Println(err)
+	return
+    }
+    cmd.Println(resp)
+}
+
+func unsafeRecoverHistoryCommandFunc(cmd *cobra.Command, args []string) {
+    var resp string
+    var err error
+    prefix := fmt.Sprintf("%s/unsafe-recover/history", storesPrefix)
+    resp, err = doRequest(cmd, prefix, http.MethodGet)
+    if err != nil {
+	cmd.Println(err)
+	return
+    }
+    cmd.Println(resp)
 }
 
 func storeLimitSceneCommandFunc(cmd *cobra.Command, args []string) {

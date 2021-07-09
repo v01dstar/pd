@@ -131,6 +131,11 @@ func createRouter(prefix string, svr *server.Server) *mux.Router {
 	clusterRouter.HandleFunc("/stores/limit", storesHandler.SetAllLimit).Methods("POST")
 	clusterRouter.HandleFunc("/stores/limit/scene", storesHandler.SetStoreLimitScene).Methods("POST")
 	clusterRouter.HandleFunc("/stores/limit/scene", storesHandler.GetStoreLimitScene).Methods("GET")
+	clusterRouter.HandleFunc("/stores/unsafe-recover",
+		storesHandler.UnsafeRecover).Methods("POST")
+	clusterRouter.HandleFunc("/stores/unsafe-recover/show", storesHandler.GetUnsafeRecoverStatus).Methods("GET")
+	clusterRouter.HandleFunc("/stores/unsafe-recover/history",
+		storesHandler.GetUnsafeRecoverHistory).Methods("GET")
 
 	labelsHandler := newLabelsHandler(svr, rd)
 	clusterRouter.HandleFunc("/labels", labelsHandler.Get).Methods("GET")

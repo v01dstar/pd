@@ -608,6 +608,33 @@ func (h *storesHandler) GetStoreLimitScene(w http.ResponseWriter, r *http.Reques
 }
 
 // @Tags store
+// @Summary Recover failed stores unsafely.
+// @Produce json
+// @Router /stores/unsafe-recover [POST]
+func (h *storesHandler) UnsafeRecover(w http.ResponseWriter, r *http.Request) {
+	h.rd.JSON(w, http.StatusBadRequest, "Unimplemented")
+	return
+}
+
+// @Tags store
+// @Summary Recover failed stores unsafely.
+// @Produce json
+// @Router /stores/unsafe-recover [POST]
+func (h *storesHandler) GetUnsafeRecoverStatus(w http.ResponseWriter, r *http.Request) {
+	h.rd.JSON(w, http.StatusBadRequest, "Unimplemented")
+	return
+}
+
+// @Tags store
+// @Summary Recover failed stores unsafely.
+// @Produce json
+// @Router /stores/unsafe-recover [POST]
+func (h *storesHandler) GetUnsafeRecoverHistory(w http.ResponseWriter, r *http.Request) {
+	h.rd.JSON(w, http.StatusBadRequest, "Unimplemented")
+	return
+}
+
+// @Tags store
 // @Summary Get stores in the cluster.
 // @Param state query array true "Specify accepted store states."
 // @Produce json
