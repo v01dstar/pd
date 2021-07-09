@@ -613,7 +613,6 @@ func (h *storesHandler) GetStoreLimitScene(w http.ResponseWriter, r *http.Reques
 // @Router /stores/unsafe-recover [POST]
 func (h *storesHandler) UnsafeRecover(w http.ResponseWriter, r *http.Request) {
 	h.rd.JSON(w, http.StatusBadRequest, "Unimplemented")
-	return
 }
 
 // @Tags store
@@ -622,7 +621,6 @@ func (h *storesHandler) UnsafeRecover(w http.ResponseWriter, r *http.Request) {
 // @Router /stores/unsafe-recover/show [GET]
 func (h *storesHandler) GetUnsafeRecoverStatus(w http.ResponseWriter, r *http.Request) {
 	h.rd.JSON(w, http.StatusBadRequest, "Unimplemented")
-	return
 }
 
 // @Tags store
@@ -631,7 +629,6 @@ func (h *storesHandler) GetUnsafeRecoverStatus(w http.ResponseWriter, r *http.Re
 // @Router /stores/unsafe-recover/history [GET]
 func (h *storesHandler) GetUnsafeRecoverHistory(w http.ResponseWriter, r *http.Request) {
 	h.rd.JSON(w, http.StatusBadRequest, "Unimplemented")
-	return
 }
 
 // @Tags store
