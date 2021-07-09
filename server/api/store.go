@@ -617,18 +617,18 @@ func (h *storesHandler) UnsafeRecover(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Tags store
-// @Summary Recover failed stores unsafely.
+// @Summary Show the current status of unsafe recoveries.
 // @Produce json
-// @Router /stores/unsafe-recover [POST]
+// @Router /stores/unsafe-recover/show [GET]
 func (h *storesHandler) GetUnsafeRecoverStatus(w http.ResponseWriter, r *http.Request) {
 	h.rd.JSON(w, http.StatusBadRequest, "Unimplemented")
 	return
 }
 
 // @Tags store
-// @Summary Recover failed stores unsafely.
+// @Summary Show the history of unsafe recoveries.
 // @Produce json
-// @Router /stores/unsafe-recover [POST]
+// @Router /stores/unsafe-recover/history [GET]
 func (h *storesHandler) GetUnsafeRecoverHistory(w http.ResponseWriter, r *http.Request) {
 	h.rd.JSON(w, http.StatusBadRequest, "Unimplemented")
 	return

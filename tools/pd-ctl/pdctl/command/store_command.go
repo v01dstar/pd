@@ -207,7 +207,7 @@ func NewUnsafeRecoverCommand() *cobra.Command {
 	sc := &cobra.Command{
 		Use:   "unsafe-recover [<type>]",
 		Short: "Recover failed stores unsafely",
-		Long:  "Recover failed stores unsafely, <type> can be a list of store e.g. '<s1,s2,...>' or 'show' or 'history'",
+		Long:  "Recover failed stores unsafely, <type> can be a list of stores e.g. '<s1,s2,...>' or 'show' or 'history'",
 		Run:   unsafeRecoverCommandFunc,
 	}
 	sc.AddCommand(NewUnsafeRecoverShowCommand())
@@ -228,45 +228,9 @@ func NewUnsafeRecoverShowCommand() *cobra.Command {
 func NewUnsafeRecoverHistoryCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "history",
-		Short: "Show the history log",
+		Short: "Show the history of unsafe recoveries",
 		Run:   unsafeRecoverHistoryCommandFunc,
 	}
-}
-
-func unsafeRecoverCommandFunc(cmd *cobra.Command, args []string) {
-    var resp string
-    var err error
-    prefix := fmt.Sprintf("%s/unsafe-recover", storesPrefix)
-    resp, err = doRequest(cmd, prefix, http.MethodPost)
-    if err != nil {
-	cmd.Println(err)
-	return
-    }
-    cmd.Println(resp)
-}
-
-func unsafeRecoverShowCommandFunc(cmd *cobra.Command, args []string) {
-    var resp string
-    var err error
-    prefix := fmt.Sprintf("%s/unsafe-recover/show", storesPrefix)
-    resp, err = doRequest(cmd, prefix, http.MethodGet)
-    if err != nil {
-	cmd.Println(err)
-	return
-    }
-    cmd.Println(resp)
-}
-
-func unsafeRecoverHistoryCommandFunc(cmd *cobra.Command, args []string) {
-    var resp string
-    var err error
-    prefix := fmt.Sprintf("%s/unsafe-recover/history", storesPrefix)
-    resp, err = doRequest(cmd, prefix, http.MethodGet)
-    if err != nil {
-	cmd.Println(err)
-	return
-    }
-    cmd.Println(resp)
 }
 
 func storeLimitSceneCommandFunc(cmd *cobra.Command, args []string) {
@@ -608,4 +572,40 @@ func setAllLimitCommandFunc(cmd *cobra.Command, args []string) {
 		input["type"] = args[1]
 	}
 	postJSON(cmd, prefix, input)
+}
+
+func unsafeRecoverCommandFunc(cmd *cobra.Command, args []string) {
+	var resp string
+	var err error
+	prefix := fmt.Sprintf("%s/unsafe-recover", storesPrefix)
+	resp, err = doRequest(cmd, prefix, http.MethodPost)
+	if err != nil {
+		cmd.Println(err)
+		return
+	}
+	cmd.Println(resp)
+}
+
+func unsafeRecoverShowCommandFunc(cmd *cobra.Command, args []string) {
+	var resp string
+	var err error
+	prefix := fmt.Sprintf("%s/unsafe-recover/show", storesPrefix)
+	resp, err = doRequest(cmd, prefix, http.MethodGet)
+	if err != nil {
+		cmd.Println(err)
+		return
+	}
+	cmd.Println(resp)
+}
+
+func unsafeRecoverHistoryCommandFunc(cmd *cobra.Command, args []string) {
+	var resp string
+	var err error
+	prefix := fmt.Sprintf("%s/unsafe-recover/history", storesPrefix)
+	resp, err = doRequest(cmd, prefix, http.MethodGet)
+	if err != nil {
+		cmd.Println(err)
+		return
+	}
+	cmd.Println(resp)
 }
