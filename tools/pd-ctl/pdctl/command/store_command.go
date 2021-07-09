@@ -202,7 +202,7 @@ func NewStoreLimitSceneCommand() *cobra.Command {
 	}
 }
 
-// Returns the unsafe recover command for the store command.
+// NewUnsafeRecoverCommand returns the unsafe recover command for the store command.
 func NewUnsafeRecoverCommand() *cobra.Command {
 	sc := &cobra.Command{
 		Use:   "unsafe-recover [<type>]",
@@ -215,7 +215,7 @@ func NewUnsafeRecoverCommand() *cobra.Command {
 	return sc
 }
 
-// Returns the unsafe-recover show command for the unsafe-recover command.
+// NewUnsafeRecoverShowCommand returns the unsafe-recover show command for the unsafe-recover command.
 func NewUnsafeRecoverShowCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
@@ -224,7 +224,7 @@ func NewUnsafeRecoverShowCommand() *cobra.Command {
 	}
 }
 
-// Returns the unsafe-recover history command for the unsafe-recover command.
+// NewUnsafeRecoverHistoryCommand returns the unsafe-recover history command for the unsafe-recover command.
 func NewUnsafeRecoverHistoryCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "history",
