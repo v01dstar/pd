@@ -344,18 +344,4 @@ func (s *storeTestSuite) TestStore(c *C) {
 	err = json.Unmarshal(output, scene)
 	c.Assert(err, IsNil)
 	c.Assert(scene.Idle, Equals, 100)
-
-	// store unsafe-recover
-	args = []string{"-u", pdAddr, "store", "unsafe-recover", "s1,s2,s3"}
-	output, err = pdctl.ExecuteCommand(cmd, args...)
-	c.Assert(err, IsNil)
-	c.Assert(strings.Contains(string(output), "Unimplemented"), IsTrue)
-	args = []string{"-u", pdAddr, "store", "unsafe-recover", "show"}
-	output, err = pdctl.ExecuteCommand(cmd, args...)
-	c.Assert(err, IsNil)
-	c.Assert(strings.Contains(string(output), "Unimplemented"), IsTrue)
-	args = []string{"-u", pdAddr, "store", "unsafe-recover", "history"}
-	output, err = pdctl.ExecuteCommand(cmd, args...)
-	c.Assert(err, IsNil)
-	c.Assert(strings.Contains(string(output), "Unimplemented"), IsTrue)
 }
