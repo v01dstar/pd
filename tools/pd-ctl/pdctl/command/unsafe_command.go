@@ -23,12 +23,12 @@ import (
 var unsafePrefix = "pd/api/v1/unsafe"
 
 func NewUnsafeCommand() *cobra.Command {
-	unsafe_cmd := &cobra.Command{
+	unsafeCmd := &cobra.Command{
 		Use:   `unsafe [command]`,
 		Short: "Unsafe operations",
 	}
-	unsafe_cmd.AddCommand(NewRemoveFailedStoresCommand())
-	return unsafe_cmd
+	unsafeCmd.AddCommand(NewRemoveFailedStoresCommand())
+	return unsafeCmd
 }
 
 // NewRemoveFailedStoresCommand returns the unsafe remove failed stores command.
