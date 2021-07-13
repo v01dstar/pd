@@ -247,7 +247,7 @@ func createRouter(prefix string, svr *server.Server) *mux.Router {
 	clusterRouter.HandleFunc("/unsafe/remove-failed-stores",
 		unsafeOperationHandler.RemoveFailedStores).Methods("POST")
 	clusterRouter.HandleFunc("/unsafe/remove-failed-stores/show",
-	        unsafeOperationHandler.GetFailedStoresRemovalStatus).Methods("GET")
+		unsafeOperationHandler.GetFailedStoresRemovalStatus).Methods("GET")
 	clusterRouter.HandleFunc("/unsafe/remove-failed-stores/history",
 		unsafeOperationHandler.GetFailedStoresRemovalHistory).Methods("GET")
 
