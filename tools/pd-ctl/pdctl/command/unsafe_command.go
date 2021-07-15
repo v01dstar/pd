@@ -22,6 +22,7 @@ import (
 
 var unsafePrefix = "pd/api/v1/unsafe"
 
+// NewUnsafeCommand returns the unsafe subcommand of rootCmd.
 func NewUnsafeCommand() *cobra.Command {
 	unsafeCmd := &cobra.Command{
 		Use:   `unsafe [command]`,
