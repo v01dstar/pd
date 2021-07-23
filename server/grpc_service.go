@@ -450,13 +450,15 @@ func (s *Server) StoreHeartbeat(ctx context.Context, request *pdpb.StoreHeartbea
 		return nil, status.Errorf(codes.Unknown, err.Error())
 	}
 
-	storeHeartbeatHandleDuration.WithLabelValues(storeAddress, storeLabel).Observe(time.Since(start).Seconds())
-
-	return &pdpb.StoreHeartbeatResponse{
+	resp := &pdpb.StoreHeartbeatResponse{
 		Header:            s.header(),
 		ReplicationStatus: rc.GetReplicationMode().GetReplicationStatus(),
 		ClusterVersion:    rc.GetClusterVersion(),
-	}, nil
+	}
+	rc.coordinator.unsafeRecoveryController.HandleStoreHeartbeat(request, resp)
+	storeHeartbeatHandleDuration.WithLabelValues(storeAddress, storeLabel).Observe(time.Since(start).Seconds())
+
+	return resp, nil
 }
 
 const regionHeartbeatSendTimeout = 5 * time.Second
