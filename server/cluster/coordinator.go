@@ -58,17 +58,17 @@ const (
 type coordinator struct {
 	sync.RWMutex
 
-	wg              sync.WaitGroup
-	ctx             context.Context
-	cancel          context.CancelFunc
-	cluster         *RaftCluster
-	checkers        *schedule.CheckerController
-	regionScatterer *schedule.RegionScatterer
-	regionSplitter  *schedule.RegionSplitter
-	schedulers      map[string]*scheduleController
-	opController    *schedule.OperatorController
-	hbStreams       *hbstream.HeartbeatStreams
-	pluginInterface *schedule.PluginInterface
+	wg                       sync.WaitGroup
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	cluster                  *RaftCluster
+	checkers                 *schedule.CheckerController
+	regionScatterer          *schedule.RegionScatterer
+	regionSplitter           *schedule.RegionSplitter
+	schedulers               map[string]*scheduleController
+	opController             *schedule.OperatorController
+	hbStreams                *hbstream.HeartbeatStreams
+	pluginInterface          *schedule.PluginInterface
 	unsafeRecoveryController *UnsafeRecoveryController
 }
 
@@ -878,7 +878,7 @@ func NewUnsafeRecoveryController(coordinator *coordinator) *UnsafeRecoveryContro
 		failedStores:          make(map[uint64]bool),
 		storeReports:          make(map[uint64]*pdpb.StoreReport),
 		numStoresReported:     0,
-		storeRecoveryPlans:     make(map[uint64]*pdpb.RecoveryPlan),
+		storeRecoveryPlans:    make(map[uint64]*pdpb.RecoveryPlan),
 		numStoresPlanExecuted: 0,
 	}
 }
@@ -943,8 +943,8 @@ func (u *UnsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 }
 
 func (u *UnsafeRecoveryController) GenerateRecoveryPlan() {
-    u.Lock()
-    defer u.Unlock()
+	u.Lock()
+	defer u.Unlock()
 }
 
 func (u *UnsafeRecoveryController) Show() string {
@@ -954,9 +954,9 @@ func (u *UnsafeRecoveryController) Show() string {
 	case Ready:
 		return "Ready"
 	case CollectingClusterInfo:
-		return "Collecting cluster info from all alive stores..."
+		return fmt.Sprintf("Collecting cluster info from all alive stores, %d/%d.", numStoresReported, len(storeReports))
 	case Recovering:
-		return "Recovering..."
+		return fmt.Sprintf("Recovering, %d/%d", numStoresPlanExecuted, len(storeRecoveryPlans))
 	}
 	return "Undefined status"
 }
@@ -965,15 +965,15 @@ func (u *UnsafeRecoveryController) History() string {
 	history := "Current status: " + u.Show()
 	history += "\nFailed stores: "
 	for storeID, _ := range failedStores {
-	    history += string(storeID) + ","
+		history += string(storeID) + ","
 	}
 	history += "\nStore reports: "
 	for storeID, report := range storeReports {
-	    history += "\n" + string(storeID)
-	    if report == nil {
-		history += ": not yet reported"
-	    } else {
-		history += ": reported"
-	    }
+		history += "\n" + string(storeID)
+		if report == nil {
+			history += ": not yet reported"
+		} else {
+			history += ": reported"
+		}
 	}
 }
