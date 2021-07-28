@@ -461,7 +461,6 @@ func (s *Server) StoreHeartbeat(ctx context.Context, request *pdpb.StoreHeartbea
 	if rc.GetUnsafeRecoveryController() != nil {
 		rc.GetUnsafeRecoveryController().HandleStoreHeartbeat(request, resp)
 	}
-
 	return resp, nil
 }
 
