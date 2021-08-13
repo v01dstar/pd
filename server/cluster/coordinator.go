@@ -26,6 +26,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/log"
+	"github.com/pingcap/kvproto/pkg/pdpb"
 	"github.com/tikv/pd/pkg/errs"
 	"github.com/tikv/pd/pkg/logutil"
 	"github.com/tikv/pd/server/config"
@@ -89,6 +90,10 @@ func newCoordinator(ctx context.Context, cluster *RaftCluster, hbStreams *hbstre
 		pluginInterface: schedule.NewPluginInterface(),
 		unsafeRecoveryController: NewUnsafeRecoveryController(),
 	}
+}
+
+func (c *coordinator) GetUnsafeRecoveryController() *UnsafeRecoveryController {
+    return c.unsafeRecoveryController
 }
 
 // patrolRegions is used to scan regions.
@@ -866,9 +871,9 @@ type UnsafeRecoveryController struct {
 	stage                 UnsafeRecoveryStage
 	failedStores          map[uint64]bool
 	storeReports          map[uint64]*pdpb.StoreReport // Store info proto
-	numStoresReported     uint64
+	numStoresReported     int
 	storeRecoveryPlans    map[uint64]*pdpb.RecoveryPlan // StoreRecoveryPlan proto
-	numStoresPlanExecuted uint64
+	numStoresPlanExecuted int
 }
 
 func NewUnsafeRecoveryController(coordinator *coordinator) *UnsafeRecoveryController {
@@ -890,11 +895,11 @@ func (u *UnsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]bo
 		return false
 	}
 	u.failedStores = failedStores
-	for _, s := range coordinator.rc.GetStores() {
+	for _, s := range u.coordinator.cluster.GetStores() {
 		if s.IsTombstone() || s.IsPhysicallyDestroyed() || failedStores[s.GetID()] {
 			continue
 		}
-		u.storeResponse[s.GetID()] = nil
+		u.storeReports[s.GetID()] = nil
 	}
 	u.stage = CollectingClusterInfo
 	return true
@@ -903,31 +908,31 @@ func (u *UnsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]bo
 func (u *UnsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHeartbeatRequest, resp *pdpb.StoreHeartbeatResponse) {
 	u.Lock()
 	defer u.Unlock()
-	if len(failedStores) == 0 {
+	if len(u.failedStores) == 0 {
 		return
 	}
 	switch u.stage {
 	case CollectingClusterInfo:
-		if heartbeat.DetailedReport.StoreID == 0 {
+		if heartbeat.StoreReport.StoreId == 0 {
 			// Inform the store to send detailed report in the next heartbeat.
-			resp.ReportDetailsInNextHeartbeat = true
-		} else if u.storeReports[heartbeat.StoreReport.StoreID] == nil {
-			u.storeReports[heartbeat.StoreReport.StoreID] = heartbeat.StoreReport
-			u.numStoresResponded++
-			if u.numStoresResponded == len(storeReports) {
+			resp.SendDetailedReportInNextHeartbeat= true
+		} else if u.storeReports[heartbeat.StoreReport.StoreId] == nil {
+			u.storeReports[heartbeat.StoreReport.StoreId] = heartbeat.StoreReport
+			u.numStoresReported++
+			if u.numStoresReported == len(u.storeReports) {
 				// Info collection is done.
 				u.stage = Recovering
 				go u.GenerateRecoveryPlan()
 			}
 		}
 	case Recovering:
-		if u.storeRecoveryPlans[heartbeat.StoreReport.StoreID] != nil {
+		if u.storeRecoveryPlans[heartbeat.StoreReport.StoreId] != nil {
 			if !u.IsPlanExecuted(heartbeat.StoreReport) {
 				// If the plan has not been executed, send it through the heartbeat response.
-				resp.RecoveryPlan = u.storeRecoveryPlans[heartbeat.StoreReport.StoreID]
+				resp.Plan = u.storeRecoveryPlans[heartbeat.StoreReport.StoreId]
 			} else {
 				u.numStoresPlanExecuted++
-				if u.numStoresPlanExecuted == len(storeRecoveryPlans) {
+				if u.numStoresPlanExecuted == len(u.storeRecoveryPlans) {
 					// The recovery is finished.
 					u.stage = Ready
 					u.failedStores = make(map[uint64]bool)
@@ -942,6 +947,10 @@ func (u *UnsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 	}
 }
 
+func (u *UnsafeRecoveryController) IsPlanExecuted(report *pdpb.StoreReport) bool {
+    return true;
+}
+
 func (u *UnsafeRecoveryController) GenerateRecoveryPlan() {
 	u.Lock()
 	defer u.Unlock()
@@ -954,9 +963,10 @@ func (u *UnsafeRecoveryController) Show() string {
 	case Ready:
 		return "Ready"
 	case CollectingClusterInfo:
-		return fmt.Sprintf("Collecting cluster info from all alive stores, %d/%d.", numStoresReported, len(storeReports))
+		return fmt.Sprintf("Collecting cluster info from all alive stores, %d/%d.",
+		u.numStoresReported, len(u.storeReports))
 	case Recovering:
-		return fmt.Sprintf("Recovering, %d/%d", numStoresPlanExecuted, len(storeRecoveryPlans))
+		return fmt.Sprintf("Recovering, %d/%d", u.numStoresPlanExecuted, len(u.storeRecoveryPlans))
 	}
 	return "Undefined status"
 }
@@ -964,11 +974,11 @@ func (u *UnsafeRecoveryController) Show() string {
 func (u *UnsafeRecoveryController) History() string {
 	history := "Current status: " + u.Show()
 	history += "\nFailed stores: "
-	for storeID, _ := range failedStores {
+	for storeID, _ := range u.failedStores {
 		history += string(storeID) + ","
 	}
 	history += "\nStore reports: "
-	for storeID, report := range storeReports {
+	for storeID, report := range u.storeReports {
 		history += "\n" + string(storeID)
 		if report == nil {
 			history += ": not yet reported"
@@ -976,4 +986,5 @@ func (u *UnsafeRecoveryController) History() string {
 			history += ": reported"
 		}
 	}
+	return history
 }

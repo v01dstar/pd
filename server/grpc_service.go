@@ -455,8 +455,8 @@ func (s *Server) StoreHeartbeat(ctx context.Context, request *pdpb.StoreHeartbea
 		ReplicationStatus: rc.GetReplicationMode().GetReplicationStatus(),
 		ClusterVersion:    rc.GetClusterVersion(),
 	}
-	if rc.coordinator.unsafeRecoveryController != nil {
-		rc.coordinator.unsafeRecoveryController.HandleStoreHeartbeat(request, resp)
+	if rc.GetCoordinator().GetUnsafeRecoveryController() != nil {
+		rc.GetCoordinator().GetUnsafeRecoveryController().HandleStoreHeartbeat(request, resp)
 	}
 	storeHeartbeatHandleDuration.WithLabelValues(storeAddress, storeLabel).Observe(time.Since(start).Seconds())
 
