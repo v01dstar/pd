@@ -33,7 +33,7 @@ const (
 type UnsafeRecoveryController struct {
 	sync.RWMutex
 
-	RaftCluster           *cluster
+	cluster *RaftCluster
 	stage                 UnsafeRecoveryStage
 	failedStores          map[uint64]bool
 	storeReports          map[uint64]*pdpb.StoreReport // Store info proto
@@ -42,7 +42,7 @@ type UnsafeRecoveryController struct {
 	numStoresPlanExecuted int
 }
 
-func newUnsafeRecoveryController(cluster *RaftCluster) *UnsafeRecoveryController {
+func NewUnsafeRecoveryController(cluster *RaftCluster) *UnsafeRecoveryController {
 	return &UnsafeRecoveryController{
 		cluster:               cluster,
 		stage:                 Ready,
