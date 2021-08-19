@@ -71,19 +71,16 @@ func removeFailedStoresCommandFunc(cmd *cobra.Command, args []string) {
 		return
 	}
 	strStores := strings.Split(args[0], ",")
-	var stores = []int{}
+	stores := make(map[string]interface{})
 	for _, strStore := range strStores {
-		store, err := strconv.Atoi(strStore)
+		_, err := strconv.Atoi(strStore)
 		if err != nil {
 			cmd.Usage()
 			return
 		}
-		stores = append(stores, store)
+		stores[strStore] = ""
 	}
-	input := map[string]interface{}{
-		"stores": stores,
-	}
-	postJSON(cmd, prefix, input)
+	postJSON(cmd, prefix, stores)
 }
 
 func removeFailedStoresShowCommandFunc(cmd *cobra.Command, args []string) {
