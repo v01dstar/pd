@@ -15,6 +15,8 @@ package command
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"net/http"
 
 	"github.com/spf13/cobra"
@@ -63,15 +65,25 @@ func NewRemoveFailedStoresHistoryCommand() *cobra.Command {
 }
 
 func removeFailedStoresCommandFunc(cmd *cobra.Command, args []string) {
-	var resp string
-	var err error
 	prefix := fmt.Sprintf("%s/remove-failed-stores", unsafePrefix)
-	resp, err = doRequest(cmd, prefix, http.MethodPost)
-	if err != nil {
-		cmd.Println(err)
-		return
+	if len(args) != 1 {
+	    cmd.Usage()
+	    return
 	}
-	cmd.Println(resp)
+	strStores := strings.Split(args[0], ",")
+	var stores = []int{}
+	for _, strStore := range strStores {
+	    store, err := strconv.Atoi(strStore)
+	    if err != nil {
+		cmd.Usage()
+		return
+	    }
+	    stores = append(stores, store)
+	}
+	input := map[string]interface{}{
+	    "stores": stores,
+	}
+	postJSON(cmd, prefix, input)
 }
 
 func removeFailedStoresShowCommandFunc(cmd *cobra.Command, args []string) {
