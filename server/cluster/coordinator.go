@@ -90,10 +90,6 @@ func newCoordinator(ctx context.Context, cluster *RaftCluster, hbStreams *hbstre
 	}
 }
 
-func (c *coordinator) GetUnsafeRecoveryController() *UnsafeRecoveryController {
-	return c.unsafeRecoveryController
-}
-
 // patrolRegions is used to scan regions.
 // The checkers will check these regions to decide if they need to do some operations.
 func (c *coordinator) patrolRegions() {

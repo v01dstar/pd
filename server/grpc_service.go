@@ -421,7 +421,7 @@ func (s *Server) StoreHeartbeat(ctx context.Context, request *pdpb.StoreHeartbea
 		return nil, err
 	}
 
-	if request.GetStats() == nil {
+	if request.GetStats() == nil && request.GetStoreReport() == nil {
 		return nil, errors.Errorf("invalid store heartbeat command, but %v", request)
 	}
 	rc := s.GetRaftCluster()
@@ -429,25 +429,28 @@ func (s *Server) StoreHeartbeat(ctx context.Context, request *pdpb.StoreHeartbea
 		return &pdpb.StoreHeartbeatResponse{Header: s.notBootstrappedHeader()}, nil
 	}
 
-	if pberr := checkStore(rc, request.GetStats().GetStoreId()); pberr != nil {
-		return &pdpb.StoreHeartbeatResponse{
-			Header: s.errorHeader(pberr),
-		}, nil
-	}
+	if request.GetStats() != nil && request.GetStoreReport() == nil {
+		if pberr := checkStore(rc, request.GetStats().GetStoreId()); pberr != nil {
+			return &pdpb.StoreHeartbeatResponse{
+				Header: s.errorHeader(pberr),
+			}, nil
+		}
 
-	storeID := request.Stats.GetStoreId()
-	store := rc.GetStore(storeID)
-	if store == nil {
-		return nil, errors.Errorf("store %v not found", storeID)
-	}
+		storeID := request.Stats.GetStoreId()
+		store := rc.GetStore(storeID)
+		if store == nil {
+			return nil, errors.Errorf("store %v not found", storeID)
+		}
 
-	storeAddress := store.GetAddress()
-	storeLabel := strconv.FormatUint(storeID, 10)
-	start := time.Now()
+		storeAddress := store.GetAddress()
+		storeLabel := strconv.FormatUint(storeID, 10)
+		start := time.Now()
 
-	err := rc.HandleStoreHeartbeat(request.Stats)
-	if err != nil {
-		return nil, status.Errorf(codes.Unknown, err.Error())
+		err := rc.HandleStoreHeartbeat(request.Stats)
+		if err != nil {
+			return nil, status.Errorf(codes.Unknown, err.Error())
+		}
+		storeHeartbeatHandleDuration.WithLabelValues(storeAddress, storeLabel).Observe(time.Since(start).Seconds())
 	}
 
 	resp := &pdpb.StoreHeartbeatResponse{
@@ -455,10 +458,9 @@ func (s *Server) StoreHeartbeat(ctx context.Context, request *pdpb.StoreHeartbea
 		ReplicationStatus: rc.GetReplicationMode().GetReplicationStatus(),
 		ClusterVersion:    rc.GetClusterVersion(),
 	}
-	if rc.GetCoordinator().GetUnsafeRecoveryController() != nil {
-		rc.GetCoordinator().GetUnsafeRecoveryController().HandleStoreHeartbeat(request, resp)
+	if rc.GetUnsafeRecoveryController() != nil {
+		rc.GetUnsafeRecoveryController().HandleStoreHeartbeat(request, resp)
 	}
-	storeHeartbeatHandleDuration.WithLabelValues(storeAddress, storeLabel).Observe(time.Since(start).Seconds())
 
 	return resp, nil
 }
