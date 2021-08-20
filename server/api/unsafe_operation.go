@@ -16,8 +16,8 @@ package api
 import (
 	"net/http"
 
-	"github.com/tikv/pd/server"
 	"github.com/tikv/pd/pkg/apiutil"
+	"github.com/tikv/pd/server"
 	"github.com/unrolled/render"
 )
 
@@ -43,7 +43,7 @@ func (h *unsafeOperationHandler) RemoveFailedStores(w http.ResponseWriter, r *ht
 	if err := apiutil.ReadJSONRespondError(h.rd, w, r.Body, &stores); err != nil {
 		return
 	}
-	if len(stores) == 0{
+	if len(stores) == 0 {
 		h.rd.JSON(w, http.StatusBadRequest, "No store specified")
 		return
 	}

@@ -34,7 +34,7 @@ const (
 type UnsafeRecoveryController struct {
 	sync.RWMutex
 
-	cluster *RaftCluster
+	cluster               *RaftCluster
 	stage                 UnsafeRecoveryStage
 	failedStores          map[uint64]string
 	storeReports          map[uint64]*pdpb.StoreReport // Store info proto
@@ -71,7 +71,7 @@ func (u *UnsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]st
 		}
 		_, exists := failedStores[s.GetID()]
 		if exists {
-		    continue
+			continue
 		}
 		u.storeReports[s.GetID()] = nil
 	}
@@ -148,7 +148,7 @@ func (u *UnsafeRecoveryController) Show() string {
 func (u *UnsafeRecoveryController) History() string {
 	history := "Current status: " + u.Show()
 	history += "\nFailed stores: "
-	for storeID, _ := range u.failedStores {
+	for storeID := range u.failedStores {
 		history += strconv.FormatUint(storeID, 10) + ","
 	}
 	history += "\nStore reports: "
