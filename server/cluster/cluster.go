@@ -126,7 +126,7 @@ type RaftCluster struct {
 	// It's used to manage components.
 	componentManager *component.Manager
 
-	unsafeRecoveryController *UnsafeRecoveryController
+	unsafeRecoveryController *unsafeRecoveryController
 }
 
 // Status saves some state information.
@@ -263,7 +263,7 @@ func (c *RaftCluster) Start(s Server) error {
 	c.coordinator = newCoordinator(c.ctx, cluster, s.GetHBStreams())
 	c.regionStats = statistics.NewRegionStatistics(c.opt, c.ruleManager)
 	c.limiter = NewStoreLimiter(s.GetPersistOptions())
-	c.unsafeRecoveryController = NewUnsafeRecoveryController(cluster)
+	c.unsafeRecoveryController = newUnsafeRecoveryController(cluster)
 
 	c.wg.Add(5)
 	go c.runCoordinator()
@@ -500,7 +500,7 @@ func (c *RaftCluster) RemoveSuspectRegion(id uint64) {
 }
 
 // GetUnsafeRecoveryController returns the unsafe recovery controller.
-func (c *RaftCluster) GetUnsafeRecoveryController() *UnsafeRecoveryController {
+func (c *RaftCluster) GetUnsafeRecoveryController() *unsafeRecoveryController {
 	return c.unsafeRecoveryController
 }
 

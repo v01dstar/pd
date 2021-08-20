@@ -31,7 +31,7 @@ const (
 	Recovering
 )
 
-type UnsafeRecoveryController struct {
+type unsafeRecoveryController struct {
 	sync.RWMutex
 
 	cluster               *RaftCluster
@@ -43,8 +43,8 @@ type UnsafeRecoveryController struct {
 	numStoresPlanExecuted int
 }
 
-func NewUnsafeRecoveryController(cluster *RaftCluster) *UnsafeRecoveryController {
-	return &UnsafeRecoveryController{
+func newUnsafeRecoveryController(cluster *RaftCluster) *unsafeRecoveryController {
+	return &unsafeRecoveryController{
 		cluster:               cluster,
 		stage:                 Ready,
 		failedStores:          make(map[uint64]string),
@@ -55,7 +55,8 @@ func NewUnsafeRecoveryController(cluster *RaftCluster) *UnsafeRecoveryController
 	}
 }
 
-func (u *UnsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]string) error {
+// RemoveFailedStores removes failed stores from the cluster.
+func (u *unsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]string) error {
 	u.Lock()
 	defer u.Unlock()
 	if len(failedStores) == 0 {
@@ -79,7 +80,9 @@ func (u *UnsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]st
 	return nil
 }
 
-func (u *UnsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHeartbeatRequest, resp *pdpb.StoreHeartbeatResponse) {
+// HandleStoreHeartbeat handles the store heartbeat requests and checks whether the stores need to
+// send detailed report back.
+func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHeartbeatRequest, resp *pdpb.StoreHeartbeatResponse) {
 	u.Lock()
 	defer u.Unlock()
 	if len(u.failedStores) == 0 {
@@ -96,12 +99,12 @@ func (u *UnsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 			if u.numStoresReported == len(u.storeReports) {
 				// Info collection is done.
 				u.stage = Recovering
-				go u.GenerateRecoveryPlan()
+				go u.generateRecoveryPlan()
 			}
 		}
 	case Recovering:
 		if u.storeRecoveryPlans[heartbeat.StoreReport.StoreId] != nil {
-			if !u.IsPlanExecuted(heartbeat.StoreReport) {
+			if !u.isPlanExecuted(heartbeat.StoreReport) {
 				// If the plan has not been executed, send it through the heartbeat response.
 				resp.Plan = u.storeRecoveryPlans[heartbeat.StoreReport.StoreId]
 			} else {
@@ -121,16 +124,17 @@ func (u *UnsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 	}
 }
 
-func (u *UnsafeRecoveryController) IsPlanExecuted(report *pdpb.StoreReport) bool {
+func (u *unsafeRecoveryController) isPlanExecuted(report *pdpb.StoreReport) bool {
 	return true
 }
 
-func (u *UnsafeRecoveryController) GenerateRecoveryPlan() {
+func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	u.Lock()
 	defer u.Unlock()
 }
 
-func (u *UnsafeRecoveryController) Show() string {
+// Show returns the current status of ongoing unsafe recover operation.
+func (u *unsafeRecoveryController) Show() string {
 	u.RLock()
 	defer u.RUnlock()
 	switch u.stage {
@@ -145,7 +149,8 @@ func (u *UnsafeRecoveryController) Show() string {
 	return "Undefined status"
 }
 
-func (u *UnsafeRecoveryController) History() string {
+// History returns the history logs of the current unsafe recover operation.
+func (u *unsafeRecoveryController) History() string {
 	history := "Current status: " + u.Show()
 	history += "\nFailed stores: "
 	for storeID := range u.failedStores {
