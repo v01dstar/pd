@@ -58,18 +58,17 @@ const (
 type coordinator struct {
 	sync.RWMutex
 
-	wg                       sync.WaitGroup
-	ctx                      context.Context
-	cancel                   context.CancelFunc
-	cluster                  *RaftCluster
-	checkers                 *schedule.CheckerController
-	regionScatterer          *schedule.RegionScatterer
-	regionSplitter           *schedule.RegionSplitter
-	schedulers               map[string]*scheduleController
-	opController             *schedule.OperatorController
-	hbStreams                *hbstream.HeartbeatStreams
-	pluginInterface          *schedule.PluginInterface
-	unsafeRecoveryController *UnsafeRecoveryController
+	wg              sync.WaitGroup
+	ctx             context.Context
+	cancel          context.CancelFunc
+	cluster         *RaftCluster
+	checkers        *schedule.CheckerController
+	regionScatterer *schedule.RegionScatterer
+	regionSplitter  *schedule.RegionSplitter
+	schedulers      map[string]*scheduleController
+	opController    *schedule.OperatorController
+	hbStreams       *hbstream.HeartbeatStreams
+	pluginInterface *schedule.PluginInterface
 }
 
 // newCoordinator creates a new coordinator.
@@ -87,6 +86,7 @@ func newCoordinator(ctx context.Context, cluster *RaftCluster, hbStreams *hbstre
 		opController:    opController,
 		hbStreams:       hbStreams,
 		pluginInterface: schedule.NewPluginInterface(),
+		unsafeRecoveryController: NewUnsafeRecoveryController(),
 	}
 }
 
@@ -848,4 +848,131 @@ func (s *scheduleController) AllowSchedule() bool {
 func (s *scheduleController) IsPaused() bool {
 	delayUntil := atomic.LoadInt64(&s.delayUntil)
 	return time.Now().Unix() < delayUntil
+}
+
+type UnsafeRecoveryStage int
+
+const (
+	Ready UnsafeRecoveryStage = iota
+	CollectingClusterInfo
+	Recovering
+)
+
+type UnsafeRecoveryController struct {
+	sync.RWMutex
+
+	coordinator           *coordinator
+	stage                 UnsafeRecoveryStage
+	failedStores          map[uint64]bool
+	storeReports          map[uint64]*pdpb.StoreReport // Store info proto
+	numStoresReported     uint64
+	storeRecoveryPlans    map[uint64]*pdpb.RecoveryPlan // StoreRecoveryPlan proto
+	numStoresPlanExecuted uint64
+}
+
+func NewUnsafeRecoveryController(coordinator *coordinator) *UnsafeRecoveryController {
+	return &UnsafeRecoveryController{
+		coordinator:           coordinator,
+		stage:                 Ready,
+		failedStores:          make(map[uint64]bool),
+		storeReports:          make(map[uint64]*pdpb.StoreReport),
+		numStoresReported:     0,
+		storeRecoveryPlans:     make(map[uint64]*pdpb.RecoveryPlan),
+		numStoresPlanExecuted: 0,
+	}
+}
+
+func (u *UnsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]bool) bool {
+	u.Lock()
+	defer u.Unlock()
+	if len(u.failedStores) != 0 {
+		return false
+	}
+	u.failedStores = failedStores
+	for _, s := range coordinator.rc.GetStores() {
+		if s.IsTombstone() || s.IsPhysicallyDestroyed() || failedStores[s.GetID()] {
+			continue
+		}
+		u.storeResponse[s.GetID()] = nil
+	}
+	u.stage = CollectingClusterInfo
+	return true
+}
+
+func (u *UnsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHeartbeatRequest, resp *pdpb.StoreHeartbeatResponse) {
+	u.Lock()
+	defer u.Unlock()
+	if len(failedStores) == 0 {
+		return
+	}
+	switch u.stage {
+	case CollectingClusterInfo:
+		if heartbeat.DetailedReport.StoreID == 0 {
+			// Inform the store to send detailed report in the next heartbeat.
+			resp.ReportDetailsInNextHeartbeat = true
+		} else if u.storeReports[heartbeat.StoreReport.StoreID] == nil {
+			u.storeReports[heartbeat.StoreReport.StoreID] = heartbeat.StoreReport
+			u.numStoresResponded++
+			if u.numStoresResponded == len(storeReports) {
+				// Info collection is done.
+				u.stage = Recovering
+				go u.GenerateRecoveryPlan()
+			}
+		}
+	case Recovering:
+		if u.storeRecoveryPlans[heartbeat.StoreReport.StoreID] != nil {
+			if !u.IsPlanExecuted(heartbeat.StoreReport) {
+				// If the plan has not been executed, send it through the heartbeat response.
+				resp.RecoveryPlan = u.storeRecoveryPlans[heartbeat.StoreReport.StoreID]
+			} else {
+				u.numStoresPlanExecuted++
+				if u.numStoresPlanExecuted == len(storeRecoveryPlans) {
+					// The recovery is finished.
+					u.stage = Ready
+					u.failedStores = make(map[uint64]bool)
+					u.storeReports = make(map[uint64]*pdpb.StoreReport)
+					u.numStoresReported = 0
+					u.storeRecoveryPlans = make(map[uint64]*pdpb.RecoveryPlan)
+					u.numStoresPlanExecuted = 0
+				}
+			}
+
+		}
+	}
+}
+
+func (u *UnsafeRecoveryController) GenerateRecoveryPlan() {
+    u.Lock()
+    defer u.Unlock()
+}
+
+func (u *UnsafeRecoveryController) Show() string {
+	u.RLock()
+	defer u.RUnlock()
+	switch u.stage {
+	case Ready:
+		return "Ready"
+	case CollectingClusterInfo:
+		return "Collecting cluster info from all alive stores..."
+	case Recovering:
+		return "Recovering..."
+	}
+	return "Undefined status"
+}
+
+func (u *UnsafeRecoveryController) History() string {
+	history := "Current status: " + u.Show()
+	history += "\nFailed stores: "
+	for storeID, _ := range failedStores {
+	    history += string(storeID) + ","
+	}
+	history += "\nStore reports: "
+	for storeID, report := range storeReports {
+	    history += "\n" + string(storeID)
+	    if report == nil {
+		history += ": not yet reported"
+	    } else {
+		history += ": reported"
+	    }
+	}
 }
