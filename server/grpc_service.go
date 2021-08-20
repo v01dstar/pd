@@ -458,13 +458,8 @@ func (s *Server) StoreHeartbeat(ctx context.Context, request *pdpb.StoreHeartbea
 		ReplicationStatus: rc.GetReplicationMode().GetReplicationStatus(),
 		ClusterVersion:    rc.GetClusterVersion(),
 	}
-<<<<<<< HEAD
 	if rc.GetUnsafeRecoveryController() != nil {
 		rc.GetUnsafeRecoveryController().HandleStoreHeartbeat(request, resp)
-=======
-	if rc.GetCoordinator().GetUnsafeRecoveryController() != nil {
-		rc.GetCoordinator().GetUnsafeRecoveryController().HandleStoreHeartbeat(request, resp)
->>>>>>> f58d3e0c (Finishing report)
 	}
 	return resp, nil
 }
