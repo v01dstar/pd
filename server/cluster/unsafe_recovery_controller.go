@@ -23,19 +23,19 @@ import (
 	"github.com/pingcap/kvproto/pkg/pdpb"
 )
 
-type UnsafeRecoveryStage int
+type unsafeRecoveryStage int
 
 const (
-	Ready UnsafeRecoveryStage = iota
-	CollectingClusterInfo
-	Recovering
+	ready unsafeRecoveryStage = iota
+	collectingClusterInfo
+	recovering
 )
 
 type unsafeRecoveryController struct {
 	sync.RWMutex
 
 	cluster               *RaftCluster
-	stage                 UnsafeRecoveryStage
+	stage                 unsafeRecoveryStage
 	failedStores          map[uint64]string
 	storeReports          map[uint64]*pdpb.StoreReport // Store info proto
 	numStoresReported     int
@@ -46,7 +46,7 @@ type unsafeRecoveryController struct {
 func newUnsafeRecoveryController(cluster *RaftCluster) *unsafeRecoveryController {
 	return &unsafeRecoveryController{
 		cluster:               cluster,
-		stage:                 Ready,
+		stage:                 ready,
 		failedStores:          make(map[uint64]string),
 		storeReports:          make(map[uint64]*pdpb.StoreReport),
 		numStoresReported:     0,
@@ -76,7 +76,7 @@ func (u *unsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]st
 		}
 		u.storeReports[s.GetID()] = nil
 	}
-	u.stage = CollectingClusterInfo
+	u.stage = collectingClusterInfo
 	return nil
 }
 
@@ -89,7 +89,7 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 		return
 	}
 	switch u.stage {
-	case CollectingClusterInfo:
+	case collectingClusterInfo:
 		if heartbeat.StoreReport == nil {
 			// Inform the store to send detailed report in the next heartbeat.
 			resp.SendDetailedReportInNextHeartbeat = true
@@ -98,11 +98,11 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 			u.numStoresReported++
 			if u.numStoresReported == len(u.storeReports) {
 				// Info collection is done.
-				u.stage = Recovering
+				u.stage = recovering
 				go u.generateRecoveryPlan()
 			}
 		}
-	case Recovering:
+	case recovering:
 		if u.storeRecoveryPlans[heartbeat.StoreReport.StoreId] != nil {
 			if !u.isPlanExecuted(heartbeat.StoreReport) {
 				// If the plan has not been executed, send it through the heartbeat response.
@@ -111,7 +111,7 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 				u.numStoresPlanExecuted++
 				if u.numStoresPlanExecuted == len(u.storeRecoveryPlans) {
 					// The recovery is finished.
-					u.stage = Ready
+					u.stage = ready
 					u.failedStores = make(map[uint64]string)
 					u.storeReports = make(map[uint64]*pdpb.StoreReport)
 					u.numStoresReported = 0
@@ -138,12 +138,12 @@ func (u *unsafeRecoveryController) Show() string {
 	u.RLock()
 	defer u.RUnlock()
 	switch u.stage {
-	case Ready:
+	case ready:
 		return "Ready"
-	case CollectingClusterInfo:
+	case collectingClusterInfo:
 		return fmt.Sprintf("Collecting cluster info from all alive stores, %d/%d.",
 			u.numStoresReported, len(u.storeReports))
-	case Recovering:
+	case recovering:
 		return fmt.Sprintf("Recovering, %d/%d", u.numStoresPlanExecuted, len(u.storeRecoveryPlans))
 	}
 	return "Undefined status"
