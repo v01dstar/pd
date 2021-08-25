@@ -45,7 +45,7 @@ func (s *testUnsafeAPISuite) TearDownSuite(c *C) {
 }
 
 func (s *testUnsafeAPISuite) TestRemoveFailedStores(c *C) {
-	input := "foo"
+	input := "{'1' : ''}"
 	data, err := json.Marshal(input)
 	c.Assert(err, IsNil)
 	err = postJSON(testDialClient, s.urlPrefix+"/remove-failed-stores", data)
