@@ -128,9 +128,106 @@ func (u *unsafeRecoveryController) isPlanExecuted(report *pdpb.StoreReport) bool
 	return true
 }
 
+type rangeItem struct {
+	key, value []byte
+}
+
+func (r rangeItem) Less(than btree.Item) bool {
+	return r.key < than.(rangeItem).key
+}
+
 func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	u.Lock()
 	defer u.Unlock()
+	regionsNewestReport := make(map[uint64]*pdpb.PeerReport)
+	for _, storeReport := range u.storeReports {
+		for peerReport := range storeReports.Reports {
+			currentReport, ok := regionsNewestReport[peerReport.RegionState.Region.Id]
+			if ok && currentReport.RegionState.Region.RegionEpoch.Version < peerReport.RegionState.Region.RegionEpoch.Version {
+				// If the newer version of the region's state has already been reported by other stores, ignore the outdated region state.
+				continue
+			}
+			regionsNewestReport[peerReport.RegionState.Region.Id] = peerReport
+		}
+	}
+	validRangesStartToEnd := btree.New(2)
+	validRangesEndToStart := btree.New(2)
+	leaderlessRegions := make([]*pdpb.PeerReport)
+	for region, report := range regionsNewestReport {
+		if report.HasLeader {
+			validRangesStartToEnd.ReplaceOrInsert(rangeItem{report.RegionState.Region.StartKey, report.RegionState.Region.EndKey})
+			validRangesEndToStart.ReplaceOrInsert(rangeItem{report.RegionState.Region.EndKey, report.RegionState.Region.StartKey})
+		} else {
+			leaderlessRegions = append(leaderlessRegions, report)
+		}
+	}
+	sort.SliceTable(leaderlessRegions, func(i, j int) bool {
+		return leaderlessRegions[i].RaftState.LastIndex > leaderlessRegions[j].RaftState.LastIndex
+	})
+	for leaderlessRegion := range versionReverseSortedLeaderlessRegions {
+		startKey := leaderlessRegion.RegionState.Region.StartKey
+		endKey := leaderlessRegion.RegionState.Region.EndKey
+		coveredStartKeys := make([]rangItem, 0)
+		validRangesStartToEnd.AscendRange(rangeItem{startKey, ""}, rangeItem{endKey, ""}, func(item btree.Item) bool {
+			coveredStartKeys = append(coveredStartKeys, item.(rangeItem))
+		})
+		coveredEndKeys := make([]rangeItem, 0)
+		validRangesEndToStart.AscendRange(rangeItem{startKey, ""}, rangeItem{endKey, ""}, func(item btree.Item) bool {
+			coveredEndKeys = append(coveredEndKeys, item.(rangeItem))
+		})
+		plan := pdpb.RecoveryPlan
+		lastEnd := startKey
+		recoveredRangeStartKey := startKey
+		recoveredRangeEndKey := endKey
+		if len(coveredEndKeys) != 0 && coveredEndKey[0].value < startKey {
+			// The first available range that overlaps the leaderless region covers the leaderless region's start key
+			//
+			// Available ranges  : ... |_________|    |______   ....
+			// Leaderless region : ...     |_________________   ....
+			//
+			//                                   |____|         <- New region
+			//                         |_____________________   <- New available range start key
+			lastEnd = coveredEndKey[0]
+			recoveredRangeStartKey = coveredEndKey[0].value
+		}
+		for _, coveredStartKey := range coveredStartKeys {
+			newRegion := pdpb.Region
+			newRegion.StartKey = lastEnd
+			newRegion.EndKey = coveredStartKey.key
+			plan.ToRegions.add(newRegion)
+			lastEnd = coveredStartKey.value
+			validRangesStartToEnd.Delete(coveredStartKey)
+		}
+		for _, coveredEndKey := range coveredEndKeys {
+			validrangesEndToStart.Delete(coveredEndKey)
+		}
+		if lastEnd < endKey {
+			// Available ranges  : ... ____|  |____________|      ...
+			// Leaderless region : ... _________________________| ...
+			//
+			//                                              |___| <- Trimmed region
+			//                         _________________________| <- New available range end key
+			lastNewRegion := pdpb.Region
+			lastNewRegion.StartKey = lastEnd
+			lastNewRegion.EndKey = endKey
+			plan.ToRegions.add(lastNewRegion)
+		} else {
+			recoveredRangeEndKey = lastEnd
+		}
+		alreadyCovered := false
+		if len(coveredStartKeys) == 0 && len(coveredEndKeys) == 0 {
+			validRangesStartToEnd.DescendLessOrEqual(rangeItem{startKey, ""}, func(item btree.Item) bool {
+				if item.(rangeItem).value >= endKey {
+					alreadyCovered = true
+				}
+				return false
+			})
+		}
+		if !alreadyCovered {
+			validRangesStartToEnd.ReplaceOrInsert(rangeItem{recoveredRangeStartKey, recoveredRangeEndKey})
+			validRangesEndToStart.ReplaceOrInsert(rangeItem{recoveredRnageEndKey, recoveredRangeStartKey})
+		}
+	}
 }
 
 // Show returns the current status of ongoing unsafe recover operation.
