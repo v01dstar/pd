@@ -139,94 +139,124 @@ func (r rangeItem) Less(than btree.Item) bool {
 func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	u.Lock()
 	defer u.Unlock()
-	regionsNewestReport := make(map[uint64]*pdpb.PeerReport)
+	// Peers that cannot elect a leader due to store failures.
+	leaderlessPeers := make([]*pdpb.PeerReport)
+	regionReports := make(map[uint64]*pdpb.PeerReport)
 	for _, storeReport := range u.storeReports {
-		for peerReport := range storeReports.Reports {
-			currentReport, ok := regionsNewestReport[peerReport.RegionState.Region.Id]
-			if ok && currentReport.RegionState.Region.RegionEpoch.Version < peerReport.RegionState.Region.RegionEpoch.Version {
-				// If the newer version of the region's state has already been reported by other stores, ignore the outdated region state.
-				continue
+		for _, peerReport := range storeReports.Reports {
+			if peerReport.HasLeader {
+				existingReport, ok := regionReports[peerReport.RegionState.Region.Id]
+				if ok && existingReport.RegionState.Region.RegionEpoch.Version > peerReport.RegionState.Region.RegionEpoch.Version {
+					// Only keeps the newest region report.
+					continue
+				}
+				regionReports[peerReport.RegionState.Region.Id] = peerReport
+			} else {
+				leaderlessPeers = append(leaderlessPeers, peerReport)
 			}
-			regionsNewestReport[peerReport.RegionState.Region.Id] = peerReport
 		}
 	}
+	// Uses 2 ordered map to implement the interval map.
 	validRangesStartToEnd := btree.New(2)
 	validRangesEndToStart := btree.New(2)
-	leaderlessRegions := make([]*pdpb.PeerReport)
-	for region, report := range regionsNewestReport {
-		if report.HasLeader {
-			validRangesStartToEnd.ReplaceOrInsert(rangeItem{report.RegionState.Region.StartKey, report.RegionState.Region.EndKey})
-			validRangesEndToStart.ReplaceOrInsert(rangeItem{report.RegionState.Region.EndKey, report.RegionState.Region.StartKey})
-		} else {
-			leaderlessRegions = append(leaderlessRegions, report)
-		}
+	for region, report := range regionReports {
+		validRangesStartToEnd.ReplaceOrInsert(rangeItem{report.RegionState.Region.StartKey, report.RegionState.Region.EndKey})
+		validRangesEndToStart.ReplaceOrInsert(rangeItem{report.RegionState.Region.EndKey, report.RegionState.Region.StartKey})
 	}
-	sort.SliceTable(leaderlessRegions, func(i, j int) bool {
-		return leaderlessRegions[i].RaftState.LastIndex > leaderlessRegions[j].RaftState.LastIndex
+	sort.SliceTable(leaderlessPeers, func(i, j int) bool {
+		return leaderpeerlessPeers[i].RaftState.LastIndex > leaderlessPeers[j].RaftState.LastIndex
 	})
-	for leaderlessRegion := range versionReverseSortedLeaderlessRegions {
-		startKey := leaderlessRegion.RegionState.Region.StartKey
-		endKey := leaderlessRegion.RegionState.Region.EndKey
+	for _, peer := range leaderlessPeers {
+		// Iterates all leaderless peers, if a peer has been fully
+		// covered by a valid range (from another region or the same region but another peer), do nothing, while, if a peer can fill some
+		// of the gaps between available ranges so far, find all the gaps and ask the peer
+		// to create new regions for each of the gap, besides, merge the all the scattered
+		// ranges that are connected by filling up these gaps.
+		startKey := peer.RegionState.Region.StartKey
+		endKey := peer.RegionState.Region.EndKey
 		coveredStartKeys := make([]rangItem, 0)
-		validRangesStartToEnd.AscendRange(rangeItem{startKey, ""}, rangeItem{endKey, ""}, func(item btree.Item) bool {
+		validRangesStartToEnd.AscendGreaterOrEqual(rangeItem{startKey, ""}, func(item btree.Item) bool {
+			if item.(rangeItem).key > endKey {
+				return false
+			}
 			coveredStartKeys = append(coveredStartKeys, item.(rangeItem))
+			return true
 		})
 		coveredEndKeys := make([]rangeItem, 0)
-		validRangesEndToStart.AscendRange(rangeItem{startKey, ""}, rangeItem{endKey, ""}, func(item btree.Item) bool {
+		validRangesEndToStart.AscendGreaterOrEqual(rangeItem{startKey, ""}, func(item btree.Item) bool {
+			if item.(rangeItem).key > endKey {
+				return false
+			}
 			coveredEndKeys = append(coveredEndKeys, item.(rangeItem))
+			return true
 		})
-		plan := pdpb.RecoveryPlan
+		plan := &pdpb.PeerPlan{} // Stores the target state, empty plan means dropping the peer entirely.
+		newContinuousRangeStart := startKey
+		newContinuousRangeEnd := endKey
 		lastEnd := startKey
-		recoveredRangeStartKey := startKey
-		recoveredRangeEndKey := endKey
-		if len(coveredEndKeys) != 0 && coveredEndKey[0].value < startKey {
-			// The first available range that overlaps the leaderless region covers the leaderless region's start key
+		if len(coveredEndKeys) != 0 && coveredEndKey[0].value <= startKey {
+			// The first available range that overlaps the leaderless region covers the
+			// leaderless region's start key. In this case, the first new region to be
+			// created starts with the first covered end key, and the new continuous
+			// range starts with the start key of the first overlapping range.
 			//
 			// Available ranges  : ... |_________|    |______   ....
 			// Leaderless region : ...     |_________________   ....
 			//
-			//                                   |____|         <- New region
+			//                                   |____|         <- First new region
 			//                         |_____________________   <- New available range start key
-			lastEnd = coveredEndKey[0]
+			lastEnd = coveredEndKey[0].key // The end key of the first overlapping range.
 			recoveredRangeStartKey = coveredEndKey[0].value
 		}
 		for _, coveredStartKey := range coveredStartKeys {
-			newRegion := pdpb.Region
+			if coveredStartKey.key == startKey {
+				continue
+			}
+			newRegion := &pdpb.Region{}
 			newRegion.StartKey = lastEnd
 			newRegion.EndKey = coveredStartKey.key
-			plan.ToRegions.add(newRegion)
+			plan.ToRegions = append(plan.ToRegions, newRegion)
 			lastEnd = coveredStartKey.value
-			validRangesStartToEnd.Delete(coveredStartKey)
+			validRangesStartToEnd.Delete(coveredStartKey) // Delete this, since it is going to be merged
 		}
 		for _, coveredEndKey := range coveredEndKeys {
-			validrangesEndToStart.Delete(coveredEndKey)
+			validrangesEndToStart.Delete(coveredEndKey) // Delete this, since it is going to be merged
 		}
 		if lastEnd < endKey {
 			// Available ranges  : ... ____|  |____________|      ...
 			// Leaderless region : ... _________________________| ...
 			//
-			//                                              |___| <- Trimmed region
+			//                                              |___| <- The last new region
 			//                         _________________________| <- New available range end key
-			lastNewRegion := pdpb.Region
+			lastNewRegion := &pdpb.Region{}
 			lastNewRegion.StartKey = lastEnd
 			lastNewRegion.EndKey = endKey
-			plan.ToRegions.add(lastNewRegion)
+			plan.ToRegions = append(plan.ToRegions, lastNewRegion)
 		} else {
 			recoveredRangeEndKey = lastEnd
 		}
-		alreadyCovered := false
+		fullyCovered := false
 		if len(coveredStartKeys) == 0 && len(coveredEndKeys) == 0 {
 			validRangesStartToEnd.DescendLessOrEqual(rangeItem{startKey, ""}, func(item btree.Item) bool {
+				// Find the nearest smaller start key from all available ranges,
+				// see if its end key is greater or equal than the current peer's
+				// end key (fully covers the current peer).
 				if item.(rangeItem).value >= endKey {
-					alreadyCovered = true
+					fullyCovered = true
 				}
 				return false
 			})
 		}
-		if !alreadyCovered {
+		if !fullyCovered {
 			validRangesStartToEnd.ReplaceOrInsert(rangeItem{recoveredRangeStartKey, recoveredRangeEndKey})
 			validRangesEndToStart.ReplaceOrInsert(rangeItem{recoveredRnageEndKey, recoveredRangeStartKey})
 		}
+		recoveryPlan, ok := storeRecoveryPlans[peer.StoreId]
+		if !ok {
+			storeRecoveryPlans[peer.StoreId] = &pdpb.RecoveryPlan{}
+			recoveryPlan = storeRecoveryPlans[peer.StoreId]
+		}
+		recoveryPlan.PeerRecoveryPlan = append(recoveryPlan.PeerRecoveryPlan, plan)
 	}
 }
 
