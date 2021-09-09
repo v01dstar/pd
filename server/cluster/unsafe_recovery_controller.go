@@ -17,11 +17,14 @@ package cluster
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strconv"
 	"sync"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/google/btree"
 	"github.com/pingcap/errors"
+	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/kvproto/pkg/pdpb"
 )
 
@@ -138,11 +141,10 @@ func (r regionItem) Less(other btree.Item) bool {
 	return bytes.Compare(r.region.StartKey, other.(regionItem).region.StartKey) < 0
 }
 
-func (u *unsafeRecoveryController) canElectLeader(region *metapb.Region) {
+func (u *unsafeRecoveryController) canElectLeader(region *metapb.Region) bool {
 	numFailedPeers := 0
-	for _, peer := range reigon.Peers {
-		_, ok := u.failedStores[peer.StoreId]
-		if ok {
+	for _, peer := range region.Peers {
+		if _, ok := u.failedStores[peer.StoreId]; ok {
 			numFailedPeers += 1
 		}
 	}
@@ -152,35 +154,35 @@ func (u *unsafeRecoveryController) canElectLeader(region *metapb.Region) {
 func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	u.Lock()
 	defer u.Unlock()
-	regionReports := make(map[uint64]*metapb.Region)
+	regionReports := make(map[uint64]*pdpb.PeerReport)
 	storeByRegion := make(map[uint64]uint64)
 	for storeId, storeReport := range u.storeReports {
 		for _, peerReport := range storeReport.Reports {
-			region := peerReport.RegionState.Region
-			existing, ok := regionReports[region.Id]
-			if ok && existing.RegionEpoch.ConfVer > region.RegionEpoch.ConfVer && existing.RegionEpoch.Version > region.RegionEpoch.Version {
+			regionId := peerReport.RegionState.Region.Id
+			if existing, ok := regionReports[regionId]; ok && existing.RaftState.LastIndex > peerReport.RaftState.LastIndex {
 				// Only keeps the newest region report.
 				continue
 			}
-			regionReports[region.Id] = region
-			storeByRegion[region.Id] = storeId
+			regionReports[regionId] = peerReport
+			storeByRegion[regionId] = storeId
 		}
 	}
-	leaderlessRegions := make([]uint64)
+	var leaderlessRegions []uint64
 	validRegions := btree.New(2)
-	for id, region := range regionReports {
+	for id, report := range regionReports {
+		region := report.RegionState.Region
 		if !u.canElectLeader(region) {
 			leaderlessRegions = append(leaderlessRegions, id)
 		} else {
 			validRegions.ReplaceOrInsert(regionItem{region})
 		}
 	}
-	sort.SliceTable(leaderlessRegions, func(i, j int) bool {
-		return regionRerports[leaderpeerlessRegions[i]].RaftState.LastIndex > regionReports[leaderlessRegions[j]].RaftState.LastIndex
+	sort.SliceStable(leaderlessRegions, func(i, j int) bool {
+		return regionReports[leaderlessRegions[i]].RegionState.Region.RegionEpoch.Version > regionReports[leaderlessRegions[j]].RegionState.Region.RegionEpoch.Version
 	})
 	recoveryPlanByRegion := make(map[uint64]*pdpb.PeerPlan)
 	for _, regionId := range leaderlessRegions {
-		region := regionReports[regionId]
+		region := regionReports[regionId].RegionState.Region
 		// Iterates all leaderless peers, if a peer has been fully
 		// covered by a valid range (from another region or the same region but another peer), do nothing, while, if a peer can fill some
 		// of the gaps between available ranges so far, find all the gaps and ask the peer
@@ -188,18 +190,16 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		// ranges that are connected by filling up these gaps.
 		overlapRegions := make([]*metapb.Region, 0)
 		validRegions.DescendLessOrEqual(regionItem{region}, func(item btree.Item) bool {
-			if item.(regionItem).region.StartKey != reigon.StartKey {
+			if bytes.Compare(item.(regionItem).region.StartKey, region.StartKey) < 0 {
 				// Only adds the first region that has smaller start key to the
-				// potential overlap regions list, since the potentials overlap
-				// regions that have greater or equal start keys are going to be
-				// added to the list by the ascending search below.
+				// *potential* overlap regions list.
 				overlapRegions = append(overlapRegions, item.(regionItem).region)
 			}
 			return false
 		})
 
 		validRegions.AscendGreaterOrEqual(regionItem{region}, func(item btree.Item) bool {
-			if region.EndKey != nil && item.(regionItem).region.StartKey > region.EndKey {
+			if region.EndKey != nil && bytes.Compare(item.(regionItem).region.StartKey, region.EndKey) > 0 {
 				return false
 			}
 			overlapRegions = append(overlapRegions, item.(regionItem).region)
@@ -213,13 +213,13 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 			if lastEnd == nil {
 				break
 			}
-			if lastEnd < overlapRegion.StartKey {
+			if bytes.Compare(lastEnd, overlapRegion.StartKey) < 0 {
 				target := proto.Clone(region).(*metapb.Region)
 				if isFirstPiece {
 					target.Id = regionId
 					isFirstPiece = false
 				} else {
-					newRegionId = u.cluster.AllocID()
+					newRegionId, _ := u.cluster.AllocID()
 					target.Id = newRegionId
 				}
 				target.StartKey = lastEnd
@@ -227,17 +227,17 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 				peerPlan.Targets = append(peerPlan.Targets, target)
 				validRegions.ReplaceOrInsert(regionItem{target})
 				lastEnd = overlapRegion.EndKey
-			} else if overlapRegionEndKey == nil || overlapRegion.EndKey > lastEnd {
+			} else if overlapRegion.EndKey == nil || bytes.Compare(overlapRegion.EndKey, lastEnd) > 0 {
 				lastEnd = overlapRegion.EndKey
 			}
 		}
-		if lastEnd != nil && (lastEnd < region.EndKey || region.EndKey == nil) {
+		if lastEnd != nil && (bytes.Compare(lastEnd, region.EndKey) < 0 || region.EndKey == nil) {
 			target := proto.Clone(region).(*metapb.Region)
 			if isFirstPiece {
 				target.Id = regionId
 				isFirstPiece = false
 			} else {
-				newRegionId = u.cluster.AllocID()
+				newRegionId, _ := u.cluster.AllocID()
 				target.Id = newRegionId
 			}
 			target.StartKey = lastEnd
@@ -247,8 +247,13 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		}
 		recoveryPlanByRegion[regionId] = peerPlan
 	}
+	var failedStoresList []uint64
+	for storeId, _ := range u.failedStores {
+		failedStoresList = append(failedStoresList, storeId)
+	}
 	for storeId, storeReport := range u.storeReports {
 		storePlan := &pdpb.RecoveryPlan{}
+		storePlan.FailedStores = append(storePlan.FailedStores, failedStoresList...)
 		for _, peerReport := range storeReport.Reports {
 			regionId := peerReport.RegionState.Region.Id
 			regionPlan, isLeaderLess := recoveryPlanByRegion[regionId]
@@ -265,7 +270,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 				storePlan.PeerPlan = append(storePlan.PeerPlan, regionPlan)
 			}
 		}
-		u.StoreRecoveryPlans[storeId] = storePlan
+		u.storeRecoveryPlans[storeId] = storePlan
 	}
 }
 
