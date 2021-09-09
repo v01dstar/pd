@@ -199,7 +199,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		})
 
 		validRegions.AscendGreaterOrEqual(regionItem{region}, func(item btree.Item) bool {
-			if region.EndKey != nil && bytes.Compare(item.(regionItem).region.StartKey, region.EndKey) > 0 {
+			if len(region.EndKey) != 0 && bytes.Compare(item.(regionItem).region.StartKey, region.EndKey) > 0 {
 				return false
 			}
 			overlapRegions = append(overlapRegions, item.(regionItem).region)
@@ -209,10 +209,8 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		peerPlan.RegionId = regionId
 		isFirstPiece := true // Reuse the region id for the first piece of the cutted regions.
 		lastEnd := region.StartKey
+		reachedTheEnd := false
 		for _, overlapRegion := range overlapRegions {
-			if lastEnd == nil {
-				break
-			}
 			if bytes.Compare(lastEnd, overlapRegion.StartKey) < 0 {
 				target := proto.Clone(region).(*metapb.Region)
 				if isFirstPiece {
@@ -226,12 +224,19 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 				target.EndKey = overlapRegion.StartKey
 				peerPlan.Targets = append(peerPlan.Targets, target)
 				validRegions.ReplaceOrInsert(regionItem{target})
+				if len(overlapRegion.EndKey) == 0 {
+				    reachedTheEnd = true
+				    break
+				}
 				lastEnd = overlapRegion.EndKey
-			} else if overlapRegion.EndKey == nil || bytes.Compare(overlapRegion.EndKey, lastEnd) > 0 {
+			} else if len(overlapRegion.EndKey) == 0 {
+			    reachedTheEnd = true
+			    break
+			} else if bytes.Compare(overlapRegion.EndKey, lastEnd) > 0 {
 				lastEnd = overlapRegion.EndKey
 			}
 		}
-		if lastEnd != nil && (bytes.Compare(lastEnd, region.EndKey) < 0 || region.EndKey == nil) {
+		if !reachedTheEnd && (bytes.Compare(lastEnd, region.EndKey) < 0 || len(region.EndKey) == 0) {
 			target := proto.Clone(region).(*metapb.Region)
 			if isFirstPiece {
 				target.Id = regionId

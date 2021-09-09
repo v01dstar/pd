@@ -17,6 +17,8 @@ package cluster
 import (
 	"bytes"
 	"context"
+	"reflect"
+	"sort"
 
 	. "github.com/pingcap/check"
 	"github.com/pingcap/kvproto/pkg/metapb"
@@ -119,17 +121,15 @@ func (s *testUnsafeRecoverSuite) TestPlanGeneration(c *C) {
 	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 2)
 	store1Plan, ok := recoveryController.storeRecoveryPlans[1]
 	c.Assert(ok, IsTrue)
-	c.Assert(store1Plan.FailedStores[0], Equals, uint64(3))
-	c.Assert(store1Plan.FailedStores[1], Equals, uint64(4))
+	sort.Slice(store1Plan.FailedStores, func(i, j int) bool { return store1Plan.FailedStores[i] < store1Plan.FailedStores[j] })
+	c.Assert(reflect.DeepEqual(store1Plan.FailedStores, []uint64{3, 4}), IsTrue)
 	c.Assert(store1Plan.PeerPlan[0].RegionId, Equals, uint64(1))
 	c.Assert(bytes.Compare(store1Plan.PeerPlan[0].Targets[0].StartKey, []byte("")), Equals, 0)
 	c.Assert(bytes.Compare(store1Plan.PeerPlan[0].Targets[0].EndKey, []byte("a")), Equals, 0)
 	store2Plan, ok := recoveryController.storeRecoveryPlans[2]
 	c.Assert(ok, IsTrue)
-	c.Assert(store1Plan.FailedStores[0], Equals, uint64(3))
-	c.Assert(store1Plan.FailedStores[1], Equals, uint64(4))
-	c.Assert(store2Plan.PeerPlan[0].RegionId, Equals, uint64(3))
-	c.Assert(store2Plan.PeerPlan[0].Targets[0].Id, Equals, uint64(3))
+	sort.Slice(store2Plan.FailedStores, func(i, j int) bool { return store2Plan.FailedStores[i] < store2Plan.FailedStores[j] })
+	c.Assert(reflect.DeepEqual(store2Plan.FailedStores, []uint64{3, 4}), IsTrue)
 	c.Assert(bytes.Compare(store2Plan.PeerPlan[0].Targets[0].StartKey, []byte("c")), Equals, 0)
 	c.Assert(bytes.Compare(store2Plan.PeerPlan[0].Targets[0].EndKey, []byte("m")), Equals, 0)
 	c.Assert(bytes.Compare(store2Plan.PeerPlan[0].Targets[1].StartKey, []byte("p")), Equals, 0)
