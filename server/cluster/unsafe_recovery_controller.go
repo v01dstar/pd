@@ -152,88 +152,117 @@ func (u *unsafeRecoveryController) canElectLeader(region *metapb.Region) {
 func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	u.Lock()
 	defer u.Unlock()
-	// Peers that cannot elect a leader due to store failures.
-	leaderlessPeers := make([]*pdpb.PeerReport)
-	availableRegionReports := make(map[uint64]*metapb.Region)
-	for _, storeReport := range u.storeReports {
-		for _, peerReport := range storeReports.Reports {
+	regionReports := make(map[uint64]*metapb.Region)
+	storeByRegion := make(map[uint64]uint64)
+	for storeId, storeReport := range u.storeReports {
+		for _, peerReport := range storeReport.Reports {
 			region := peerReport.RegionState.Region
-			if u.canElectLeader(region) {
-				existing, ok := availableRegionReports[region.Id]
-				if ok && existing.RegionEpoch.ConfVer > region.RegionEpoch.ConfVer && existing.RegionEpoch.Version > region.RegionEpoch.Version {
-					// Only keeps the newest region report.
-					continue
-				}
-				availableRegionReports[region.Id] = region
-			} else {
-				leaderlessPeers = append(leaderlessPeers, peerReport)
+			existing, ok := regionReports[region.Id]
+			if ok && existing.RegionEpoch.ConfVer > region.RegionEpoch.ConfVer && existing.RegionEpoch.Version > region.RegionEpoch.Version {
+				// Only keeps the newest region report.
+				continue
 			}
+			regionReports[region.Id] = region
+			storeByRegion[region.Id] = storeId
 		}
 	}
-	// Uses 2 ordered map to implement the interval map.
+	leaderlessRegions := make([]uint64)
 	validRegions := btree.New(2)
-	for _, region := range regionReports {
-		validRegions.ReplaceOrInsert(regionItem{region})
+	for id, region := range regionReports {
+		if !u.canElectLeader(region) {
+			leaderlessRegions = append(leaderlessRegions, id)
+		} else {
+			validRegions.ReplaceOrInsert(regionItem{region})
+		}
 	}
-	sort.SliceTable(leaderlessPeers, func(i, j int) bool {
-		return leaderpeerlessPeers[i].RaftState.LastIndex > leaderlessPeers[j].RaftState.LastIndex
+	sort.SliceTable(leaderlessRegions, func(i, j int) bool {
+		return regionRerports[leaderpeerlessRegions[i]].RaftState.LastIndex > regionReports[leaderlessRegions[j]].RaftState.LastIndex
 	})
-	for _, peer := range leaderlessPeers {
+	recoveryPlanByRegion := make(map[uint64]*pdpb.PeerPlan)
+	for _, regionId := range leaderlessRegions {
+		region := regionReports[regionId]
 		// Iterates all leaderless peers, if a peer has been fully
 		// covered by a valid range (from another region or the same region but another peer), do nothing, while, if a peer can fill some
 		// of the gaps between available ranges so far, find all the gaps and ask the peer
 		// to create new regions for each of the gap, besides, merge the all the scattered
 		// ranges that are connected by filling up these gaps.
-		startKey := peer.RegionState.Region.StartKey
-		endKey := peer.RegionState.Region.EndKey
 		overlapRegions := make([]*metapb.Region, 0)
-		validRegions.DescendLessOrEqual(regionItem{&metapb.Region{StartKey: startKey}}, func(item btree.Item) bool {
-			if item.(regionItem).region.StartKey != startKey {
-				// If the start keys are the same, the region will still be added while we
-				// traverse the btree in ascending order below.
+		validRegions.DescendLessOrEqual(regionItem{region}, func(item btree.Item) bool {
+			if item.(regionItem).region.StartKey != reigon.StartKey {
+				// Only adds the first region that has smaller start key to the
+				// potential overlap regions list, since the potentials overlap
+				// regions that have greater or equal start keys are going to be
+				// added to the list by the ascending search below.
 				overlapRegions = append(overlapRegions, item.(regionItem).region)
 			}
 			return false
 		})
 
-		validRegions.AscendGreaterOrEqual(regionItem{&metapb.Region{StartKey: startKey}}, func(item btree.Item) bool {
-			if item.(regionItem).region.StartKey > endKey {
+		validRegions.AscendGreaterOrEqual(regionItem{region}, func(item btree.Item) bool {
+			if item.(regionItem).region.StartKey > region.EndKey {
 				return false
 			}
 			overlapRegions = append(overlapRegions, item.(regionItem).region)
 			return true
 		})
-		newStart := startKey
-		if len(overlapRegions) > 0 && overlapRegions[0].StartKey <= startKey && overlapRegions[0].EndKey > startKey {
-			newStart = overlapRegions[0].EndKey
-		}
+		peerPlan := &pdpb.PeerPlan{}
+		peerPlan.RegionId = regionId
+		isFirstPiece := true // Reuse the region id for the first piece of the cutted regions.
+		lastEnd := region.StartKey
 		for _, overlapRegion := range overlapRegions {
-			if newStart < overlapRegion.StartKey {
-				newEnd = overlapRegion.StartKey
-			} else if newStart == overlapRegion.StartKey {
-				newStart = overlapRegion.EndKey
+			if lastEnd < overlapRegion.StartKey {
+				target := proto.Clone(region).(*metapb.Region)
+				if isFirstPiece {
+					target.Id = regionId
+					isFirstPiece = false
+				} else {
+					newRegionId = u.cluster.AllocID()
+					target.Id = newRegionId
+				}
+				target.StartKey = lastEnd
+				target.EndKey = overlapRegion.StartKey
+				peerPlan.Targets = append(peerPlan.Targets, target)
+				validRegions.ReplaceOrInsert(regionItem{target})
+				lastEnd = overlapRegion.EndKey
+			} else if overlapRegion.EndKey > lastEnd {
+				lastEnd = overlapRegion.EndKey
 			}
 		}
-		peerPlan := &pdpb.PeerPlan{}
-		peerPlan.RegionId = peer.RegionState.Region.Id
-		if newStart >= endKey {
-			// This peer's range has been fully covered, we can drop this peer.
-			peerPlan.Drop = true
-		} else {
-			// Trim this peer's range to fill a hole.
-			updatedRegion := proto.Clone(peer.RegionState.Region).(*metapb.Region)
-			updatedRegion.StartKey = newStart
-			updatedRegion.EndKey = newEnd
-			peerPlan.Target = updatedRegion
-			validRegions.ReplaceOrInsert(regionItem{updatedRegion})
+		if lastEnd < region.EndKey {
+			target := proto.Clone(region).(*metapb.Region)
+			if isFirstPiece {
+				target.Id = regionId
+				isFirstPiece = false
+			} else {
+				newRegionId = u.cluster.AllocID()
+				target.Id = newRegionId
+			}
+			target.StartKey = lastEnd
+			target.EndKey = region.EndKey
+			peerPlan.Targets = append(peerPlan.Targets, target)
+			validRegions.ReplaceOrInsert(regionItem{target})
 		}
-
-		storePlan, ok := storeRecoveryPlans[peer.StoreId]
-		if !ok {
-			storeRecoveryPlans[peer.StoreId] = &pdpb.RecoveryPlan{}
-			storePlan = storeRecoveryPlans[peer.StoreId]
+		recoveryPlanByRegion[regionId] = peerPlan
+	}
+	for storeId, storeReport := range u.storeReports {
+		storePlan := &pdpb.RecoveryPlan{}
+		for _, peerReport := range storeReport.Reports {
+			regionId := peerReport.RegionState.Region.Id
+			regionPlan, isLeaderLess := recoveryPlanByRegion[regionId]
+			if !isLeaderLess {
+				continue
+			}
+			if storeByRegion[regionId] != storeId {
+				// If this peer is not the newest replica chosen for the region,
+				// notify the store to drop it by sending a empty peer plan
+				peerPlan := &pdpb.PeerPlan{}
+				peerPlan.RegionId = regionId
+				storePlan.PeerPlan = append(storePlan.PeerPlan, peerPlan)
+			} else {
+				storePlan.PeerPlan = append(storePlan.PeerPlan, regionPlan)
+			}
 		}
-		storePlan.PeerPlan = append(storePlan.PeerPlan, peerPlan)
+		u.StoreRecoveryPlans[storeId] = storePlan
 	}
 }
 
