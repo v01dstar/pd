@@ -199,7 +199,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		})
 
 		validRegions.AscendGreaterOrEqual(regionItem{region}, func(item btree.Item) bool {
-			if item.(regionItem).region.StartKey > region.EndKey {
+			if region.EndKey != nil && item.(regionItem).region.StartKey > region.EndKey {
 				return false
 			}
 			overlapRegions = append(overlapRegions, item.(regionItem).region)
@@ -210,6 +210,9 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		isFirstPiece := true // Reuse the region id for the first piece of the cutted regions.
 		lastEnd := region.StartKey
 		for _, overlapRegion := range overlapRegions {
+			if lastEnd == nil {
+				break
+			}
 			if lastEnd < overlapRegion.StartKey {
 				target := proto.Clone(region).(*metapb.Region)
 				if isFirstPiece {
@@ -224,11 +227,11 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 				peerPlan.Targets = append(peerPlan.Targets, target)
 				validRegions.ReplaceOrInsert(regionItem{target})
 				lastEnd = overlapRegion.EndKey
-			} else if overlapRegion.EndKey > lastEnd {
+			} else if overlapRegionEndKey == nil || overlapRegion.EndKey > lastEnd {
 				lastEnd = overlapRegion.EndKey
 			}
 		}
-		if lastEnd < region.EndKey {
+		if lastEnd != nil && (lastEnd < region.EndKey || region.EndKey == nil) {
 			target := proto.Clone(region).(*metapb.Region)
 			if isFirstPiece {
 				target.Id = regionId
