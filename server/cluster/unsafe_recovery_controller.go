@@ -102,8 +102,6 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 			u.storeReports[heartbeat.StoreReport.StoreId] = heartbeat.StoreReport
 			u.numStoresReported++
 			if u.numStoresReported == len(u.storeReports) {
-				// Info collection is done.
-				u.stage = recovering
 				go u.generateRecoveryPlan()
 			}
 		}
@@ -130,7 +128,34 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 }
 
 func (u *unsafeRecoveryController) isPlanExecuted(report *pdpb.StoreReport) bool {
-	return true
+        targetRegions := make(map[uint64]*metapb.Region)
+	toBeRemovedRegions := make(map[uint64]bool)
+	storeId := report.StoreId
+	for _, peerPlan := range u.storeRecoveryPlans[storeId].PeerPlan {
+	    sourceRegionId := peerPlan.RegionId
+	    if len(peerPlan.Targets) == 0 {
+		toBeRemovedRegions[sourceRegionId] = true
+		continue
+	    }
+	    for _, targetRegion := range peerPlan.Targets {
+		targetRegions[targetRegion.Id] = targetRegion
+	    }
+	}
+	numFinished := 0
+	for _, peerReport := range report.Reports {
+	    region := peerReport.RegionState.Region
+	    if _, ok := toBeRemovedRegions[region.Id]; ok {
+		return false
+	    } else if target, ok := targetRegions[region.Id]; ok {
+		if bytes.Compare(target.StartKey, region.StartKey) == 0 && bytes.Compare(target.EndKey, region.EndKey) == 0 {
+		    numFinished += 1
+		} else {
+		    return false
+		}
+	    }
+	}
+	return numFinished == len(targetRegions)
+
 }
 
 type regionItem struct {
@@ -277,6 +302,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		}
 		u.storeRecoveryPlans[storeId] = storePlan
 	}
+	u.stage = recovering
 }
 
 // Show returns the current status of ongoing unsafe recover operation.
