@@ -147,7 +147,7 @@ func (u *unsafeRecoveryController) isPlanExecuted(report *pdpb.StoreReport) bool
 		if _, ok := toBeRemovedRegions[region.Id]; ok {
 			return false
 		} else if target, ok := targetRegions[region.Id]; ok {
-			if bytes.Compare(target.StartKey, region.StartKey) == 0 && bytes.Compare(target.EndKey, region.EndKey) == 0 {
+			if bytes.Equal(target.StartKey, region.StartKey) && bytes.Equal(target.EndKey, region.EndKey) {
 				numFinished += 1
 			} else {
 				return false
