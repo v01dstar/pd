@@ -128,31 +128,31 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 }
 
 func (u *unsafeRecoveryController) isPlanExecuted(report *pdpb.StoreReport) bool {
-        targetRegions := make(map[uint64]*metapb.Region)
+	targetRegions := make(map[uint64]*metapb.Region)
 	toBeRemovedRegions := make(map[uint64]bool)
 	storeId := report.StoreId
 	for _, peerPlan := range u.storeRecoveryPlans[storeId].PeerPlan {
-	    sourceRegionId := peerPlan.RegionId
-	    if len(peerPlan.Targets) == 0 {
-		toBeRemovedRegions[sourceRegionId] = true
-		continue
-	    }
-	    for _, targetRegion := range peerPlan.Targets {
-		targetRegions[targetRegion.Id] = targetRegion
-	    }
+		sourceRegionId := peerPlan.RegionId
+		if len(peerPlan.Targets) == 0 {
+			toBeRemovedRegions[sourceRegionId] = true
+			continue
+		}
+		for _, targetRegion := range peerPlan.Targets {
+			targetRegions[targetRegion.Id] = targetRegion
+		}
 	}
 	numFinished := 0
 	for _, peerReport := range report.Reports {
-	    region := peerReport.RegionState.Region
-	    if _, ok := toBeRemovedRegions[region.Id]; ok {
-		return false
-	    } else if target, ok := targetRegions[region.Id]; ok {
-		if bytes.Compare(target.StartKey, region.StartKey) == 0 && bytes.Compare(target.EndKey, region.EndKey) == 0 {
-		    numFinished += 1
-		} else {
-		    return false
+		region := peerReport.RegionState.Region
+		if _, ok := toBeRemovedRegions[region.Id]; ok {
+			return false
+		} else if target, ok := targetRegions[region.Id]; ok {
+			if bytes.Compare(target.StartKey, region.StartKey) == 0 && bytes.Compare(target.EndKey, region.EndKey) == 0 {
+				numFinished += 1
+			} else {
+				return false
+			}
 		}
-	    }
 	}
 	return numFinished == len(targetRegions)
 
@@ -250,13 +250,13 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 				peerPlan.Targets = append(peerPlan.Targets, target)
 				validRegions.ReplaceOrInsert(regionItem{target})
 				if len(overlapRegion.EndKey) == 0 {
-				    reachedTheEnd = true
-				    break
+					reachedTheEnd = true
+					break
 				}
 				lastEnd = overlapRegion.EndKey
 			} else if len(overlapRegion.EndKey) == 0 {
-			    reachedTheEnd = true
-			    break
+				reachedTheEnd = true
+				break
 			} else if bytes.Compare(overlapRegion.EndKey, lastEnd) > 0 {
 				lastEnd = overlapRegion.EndKey
 			}
@@ -278,7 +278,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		recoveryPlanByRegion[regionId] = peerPlan
 	}
 	var failedStoresList []uint64
-	for storeId, _ := range u.failedStores {
+	for storeId := range u.failedStores {
 		failedStoresList = append(failedStoresList, storeId)
 	}
 	for storeId, storeReport := range u.storeReports {
