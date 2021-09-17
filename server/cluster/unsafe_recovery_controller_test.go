@@ -17,8 +17,6 @@ package cluster
 import (
 	"bytes"
 	"context"
-	"reflect"
-	"sort"
 
 	. "github.com/pingcap/check"
 	"github.com/pingcap/kvproto/pkg/metapb"
@@ -44,7 +42,126 @@ func (s *testUnsafeRecoverSuite) SetUpTest(c *C) {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 }
 
-func (s *testUnsafeRecoverSuite) TestPlanGeneration(c *C) {
+func (s *testUnsafeRecoverSuite) TestOneHealthyRegion(c *C) {
+	_, opt, _ := newTestScheduleConfig()
+	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
+	recoveryController := newUnsafeRecoveryController(cluster)
+	recoveryController.failedStores = map[uint64]string{
+		3: "",
+	}
+	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
+		1: &pdpb.StoreReport{StoreId: 1, Reports: []*pdpb.PeerReport{
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+		}},
+		2: &pdpb.StoreReport{StoreId: 2, Reports: []*pdpb.PeerReport{
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+		}},
+	}
+	recoveryController.generateRecoveryPlan()
+	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 2)
+	store1Plan, ok := recoveryController.storeRecoveryPlans[1]
+	c.Assert(ok, IsTrue)
+	updatedRegion1 := store1Plan.Updates[0]
+	c.Assert(updatedRegion1.Id, Equals, uint64(1))
+	c.Assert(len(updatedRegion1.Peers), Equals, 2)
+	c.Assert(updatedRegion1.Peers[0].Id, Equals, uint64(11))
+	c.Assert(updatedRegion1.Peers[1].Id, Equals, uint64(21))
+
+	store2Plan, ok := recoveryController.storeRecoveryPlans[2]
+	updatedRegion1 = store2Plan.Updates[0]
+	c.Assert(updatedRegion1.Id, Equals, uint64(1))
+	c.Assert(len(updatedRegion1.Peers), Equals, 2)
+	c.Assert(updatedRegion1.Peers[0].Id, Equals, uint64(11))
+	c.Assert(updatedRegion1.Peers[1].Id, Equals, uint64(21))
+}
+
+func (s *testUnsafeRecoverSuite) TestOneUnhealthyRegion(c *C) {
+	_, opt, _ := newTestScheduleConfig()
+	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
+	recoveryController := newUnsafeRecoveryController(cluster)
+	recoveryController.failedStores = map[uint64]string{
+		2: "",
+		3: "",
+	}
+	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
+		1: &pdpb.StoreReport{StoreId: 1, Reports: []*pdpb.PeerReport{
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+		}},
+	}
+	recoveryController.generateRecoveryPlan()
+	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 1)
+	store1Plan, ok := recoveryController.storeRecoveryPlans[1]
+	c.Assert(ok, IsTrue)
+	c.Assert(len(store1Plan.Updates), Equals, 0)
+	c.Assert(store1Plan.Deletes[0], Equals, uint64(1))
+	create := store1Plan.Creates[0]
+	c.Assert(bytes.Compare(create.StartKey, []byte("")), Equals, 0)
+	c.Assert(bytes.Compare(create.EndKey, []byte("")), Equals, 0)
+	c.Assert(len(create.Peers), Equals, 1)
+	c.Assert(create.Peers[0].StoreId, Equals, uint64(1))
+}
+
+func (s *testUnsafeRecoverSuite) TestEmptyRange(c *C) {
+	_, opt, _ := newTestScheduleConfig()
+	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
+	recoveryController := newUnsafeRecoveryController(cluster)
+	recoveryController.failedStores = map[uint64]string{
+		3: "",
+	}
+	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
+		1: &pdpb.StoreReport{StoreId: 1, Reports: []*pdpb.PeerReport{
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						StartKey:    []byte(""),
+						EndKey:      []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+		}},
+		2: &pdpb.StoreReport{StoreId: 2, Reports: []*pdpb.PeerReport{
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						StartKey:    []byte(""),
+						EndKey:      []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+		}},
+	}
+	recoveryController.generateRecoveryPlan()
+	create := recoveryController.storeRecoveryPlans[1].Creates[0]
+	c.Assert(bytes.Compare(create.StartKey, []byte("c")), Equals, 0)
+	c.Assert(bytes.Compare(create.EndKey, []byte("")), Equals, 0)
+}
+
+func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 	_, opt, _ := newTestScheduleConfig()
 	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
 	recoveryController := newUnsafeRecoveryController(cluster)
@@ -121,17 +238,28 @@ func (s *testUnsafeRecoverSuite) TestPlanGeneration(c *C) {
 	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 2)
 	store1Plan, ok := recoveryController.storeRecoveryPlans[1]
 	c.Assert(ok, IsTrue)
-	sort.Slice(store1Plan.FailedStores, func(i, j int) bool { return store1Plan.FailedStores[i] < store1Plan.FailedStores[j] })
-	c.Assert(reflect.DeepEqual(store1Plan.FailedStores, []uint64{3, 4}), IsTrue)
-	c.Assert(store1Plan.PeerPlan[0].RegionId, Equals, uint64(1))
-	c.Assert(bytes.Compare(store1Plan.PeerPlan[0].Targets[0].StartKey, []byte("")), Equals, 0)
-	c.Assert(bytes.Compare(store1Plan.PeerPlan[0].Targets[0].EndKey, []byte("a")), Equals, 0)
+	updatedRegion2 := store1Plan.Updates[0]
+	c.Assert(updatedRegion2.Id, Equals, uint64(2))
+	c.Assert(len(updatedRegion2.Peers), Equals, 2)
+	updatedRegion4 := store1Plan.Updates[1]
+	c.Assert(updatedRegion4.Id, Equals, uint64(4))
+	c.Assert(len(updatedRegion4.Peers), Equals, 2)
+	create := store1Plan.Creates[0]
+	c.Assert(bytes.Compare(create.StartKey, []byte("")), Equals, 0)
+	c.Assert(bytes.Compare(create.EndKey, []byte("a")), Equals, 0)
+	c.Assert(store1Plan.Deletes[0], Equals, uint64(1))
+
 	store2Plan, ok := recoveryController.storeRecoveryPlans[2]
-	c.Assert(ok, IsTrue)
-	sort.Slice(store2Plan.FailedStores, func(i, j int) bool { return store2Plan.FailedStores[i] < store2Plan.FailedStores[j] })
-	c.Assert(reflect.DeepEqual(store2Plan.FailedStores, []uint64{3, 4}), IsTrue)
-	c.Assert(bytes.Compare(store2Plan.PeerPlan[0].Targets[0].StartKey, []byte("c")), Equals, 0)
-	c.Assert(bytes.Compare(store2Plan.PeerPlan[0].Targets[0].EndKey, []byte("m")), Equals, 0)
-	c.Assert(bytes.Compare(store2Plan.PeerPlan[0].Targets[1].StartKey, []byte("p")), Equals, 0)
-	c.Assert(bytes.Compare(store2Plan.PeerPlan[0].Targets[1].EndKey, []byte("")), Equals, 0)
+	updatedRegion2 = store2Plan.Updates[0]
+	c.Assert(updatedRegion2.Id, Equals, uint64(2))
+	c.Assert(len(updatedRegion2.Peers), Equals, 2)
+	updatedRegion4 = store2Plan.Updates[1]
+	c.Assert(updatedRegion4.Id, Equals, uint64(4))
+	c.Assert(len(updatedRegion4.Peers), Equals, 2)
+	create21 := store2Plan.Creates[0]
+	create22 := store2Plan.Creates[1]
+	c.Assert(bytes.Compare(create21.StartKey, []byte("c")), Equals, 0)
+	c.Assert(bytes.Compare(create21.EndKey, []byte("m")), Equals, 0)
+	c.Assert(bytes.Compare(create22.StartKey, []byte("p")), Equals, 0)
+	c.Assert(bytes.Compare(create22.EndKey, []byte("")), Equals, 0)
 }

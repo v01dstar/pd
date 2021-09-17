@@ -128,32 +128,34 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 }
 
 func (u *unsafeRecoveryController) isPlanExecuted(report *pdpb.StoreReport) bool {
-	targetRegions := make(map[uint64]*metapb.Region)
-	toBeRemovedRegions := make(map[uint64]bool)
-	storeId := report.StoreId
-	for _, create := range u.storeRecoveryPlans[storeId].Creates {
-	        targetRegions[create.Id] = create
-	}
-	for _, update := range u.storeRecoveryPlans[storeId].Updates {
-	        targetRegions[update.Id] = update
-	}
-	for _, del := range u.storeRecoveryPlans[storeId].Deletes {
-	        toBeRemovedRegions[del] = true
-	}
-	numFinished := 0
-	for _, peerReport := range report.Reports {
-		region := peerReport.RegionState.Region
-		if _, ok := toBeRemovedRegions[region.Id]; ok {
-			return false
-		} else if target, ok := targetRegions[region.Id]; ok {
-			if bytes.Equal(target.StartKey, region.StartKey) && bytes.Equal(target.EndKey, region.EndKey) {
-				numFinished += 1
-			} else {
-				return false
-			}
-		}
-	}
-	return numFinished == len(targetRegions)
+	// targetRegions := make(map[uint64]*metapb.Region)
+	// toBeRemovedRegions := make(map[uint64]bool)
+	// storeId := report.StoreId
+	// for _, peerPlan := range u.storeRecoveryPlans[storeId].PeerPlan {
+	// 	sourceRegionId := peerPlan.RegionId
+	// 	if len(peerPlan.Targets) == 0 {
+	// 		toBeRemovedRegions[sourceRegionId] = true
+	// 		continue
+	// 	}
+	// 	for _, targetRegion := range peerPlan.Targets {
+	// 		targetRegions[targetRegion.Id] = targetRegion
+	// 	}
+	// }
+	// numFinished := 0
+	// for _, peerReport := range report.Reports {
+	// 	region := peerReport.RegionState.Region
+	// 	if _, ok := toBeRemovedRegions[region.Id]; ok {
+	// 		return false
+	// 	} else if target, ok := targetRegions[region.Id]; ok {
+	// 		if bytes.Equal(target.StartKey, region.StartKey) && bytes.Equal(target.EndKey, region.EndKey) {
+	// 			numFinished += 1
+	// 		} else {
+	// 			return false
+	// 		}
+	// 	}
+	// }
+	// return numFinished == len(targetRegions)
+	return true
 
 }
 
