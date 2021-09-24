@@ -72,21 +72,8 @@ func (s *testUnsafeRecoverSuite) TestOneHealthyRegion(c *C) {
 		}},
 	}
 	recoveryController.generateRecoveryPlan()
-	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 2)
-	store1Plan, ok := recoveryController.storeRecoveryPlans[1]
-	c.Assert(ok, IsTrue)
-	updatedRegion1 := store1Plan.Updates[0]
-	c.Assert(updatedRegion1.Id, Equals, uint64(1))
-	c.Assert(len(updatedRegion1.Peers), Equals, 2)
-	c.Assert(updatedRegion1.Peers[0].Id, Equals, uint64(11))
-	c.Assert(updatedRegion1.Peers[1].Id, Equals, uint64(21))
-
-	store2Plan, ok := recoveryController.storeRecoveryPlans[2]
-	updatedRegion1 = store2Plan.Updates[0]
-	c.Assert(updatedRegion1.Id, Equals, uint64(1))
-	c.Assert(len(updatedRegion1.Peers), Equals, 2)
-	c.Assert(updatedRegion1.Peers[0].Id, Equals, uint64(11))
-	c.Assert(updatedRegion1.Peers[1].Id, Equals, uint64(21))
+	// Rely on PD replic checker to remove failed stores.
+	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 0)
 }
 
 func (s *testUnsafeRecoverSuite) TestOneUnhealthyRegion(c *C) {
@@ -113,13 +100,12 @@ func (s *testUnsafeRecoverSuite) TestOneUnhealthyRegion(c *C) {
 	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 1)
 	store1Plan, ok := recoveryController.storeRecoveryPlans[1]
 	c.Assert(ok, IsTrue)
-	c.Assert(len(store1Plan.Updates), Equals, 0)
-	c.Assert(store1Plan.Deletes[0], Equals, uint64(1))
-	create := store1Plan.Creates[0]
-	c.Assert(bytes.Compare(create.StartKey, []byte("")), Equals, 0)
-	c.Assert(bytes.Compare(create.EndKey, []byte("")), Equals, 0)
-	c.Assert(len(create.Peers), Equals, 1)
-	c.Assert(create.Peers[0].StoreId, Equals, uint64(1))
+	c.Assert(len(store1Plan.Updates), Equals, 1)
+	update := store1Plan.Updates[0]
+	c.Assert(bytes.Compare(update.StartKey, []byte("")), Equals, 0)
+	c.Assert(bytes.Compare(update.EndKey, []byte("")), Equals, 0)
+	c.Assert(len(update.Peers), Equals, 1)
+	c.Assert(update.Peers[0].StoreId, Equals, uint64(1))
 }
 
 func (s *testUnsafeRecoverSuite) TestEmptyRange(c *C) {
@@ -238,28 +224,19 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 2)
 	store1Plan, ok := recoveryController.storeRecoveryPlans[1]
 	c.Assert(ok, IsTrue)
-	updatedRegion2 := store1Plan.Updates[0]
-	c.Assert(updatedRegion2.Id, Equals, uint64(2))
-	c.Assert(len(updatedRegion2.Peers), Equals, 2)
-	updatedRegion4 := store1Plan.Updates[1]
-	c.Assert(updatedRegion4.Id, Equals, uint64(4))
-	c.Assert(len(updatedRegion4.Peers), Equals, 2)
-	create := store1Plan.Creates[0]
-	c.Assert(bytes.Compare(create.StartKey, []byte("")), Equals, 0)
-	c.Assert(bytes.Compare(create.EndKey, []byte("a")), Equals, 0)
-	c.Assert(store1Plan.Deletes[0], Equals, uint64(1))
+	updatedRegion1 := store1Plan.Updates[0]
+	c.Assert(updatedRegion1.Id, Equals, uint64(1))
+	c.Assert(len(updatedRegion1.Peers), Equals, 1)
+	c.Assert(bytes.Compare(updatedRegion1.StartKey, []byte("")), Equals, 0)
+	c.Assert(bytes.Compare(updatedRegion1.EndKey, []byte("a")), Equals, 0)
 
 	store2Plan, ok := recoveryController.storeRecoveryPlans[2]
-	updatedRegion2 = store2Plan.Updates[0]
-	c.Assert(updatedRegion2.Id, Equals, uint64(2))
-	c.Assert(len(updatedRegion2.Peers), Equals, 2)
-	updatedRegion4 = store2Plan.Updates[1]
-	c.Assert(updatedRegion4.Id, Equals, uint64(4))
-	c.Assert(len(updatedRegion4.Peers), Equals, 2)
-	create21 := store2Plan.Creates[0]
-	create22 := store2Plan.Creates[1]
-	c.Assert(bytes.Compare(create21.StartKey, []byte("c")), Equals, 0)
-	c.Assert(bytes.Compare(create21.EndKey, []byte("m")), Equals, 0)
-	c.Assert(bytes.Compare(create22.StartKey, []byte("p")), Equals, 0)
-	c.Assert(bytes.Compare(create22.EndKey, []byte("")), Equals, 0)
+	updatedRegion3 := store2Plan.Updates[0]
+	c.Assert(updatedRegion3.Id, Equals, uint64(3))
+	c.Assert(len(updatedRegion3.Peers), Equals, 1)
+	c.Assert(bytes.Compare(updatedRegion3.StartKey, []byte("c")), Equals, 0)
+	c.Assert(bytes.Compare(updatedRegion3.EndKey, []byte("m")), Equals, 0)
+	create := store2Plan.Creates[0]
+	c.Assert(bytes.Compare(create.StartKey, []byte("p")), Equals, 0)
+	c.Assert(bytes.Compare(create.EndKey, []byte("")), Equals, 0)
 }
