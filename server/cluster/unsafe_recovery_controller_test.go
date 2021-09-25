@@ -56,7 +56,7 @@ func (s *testUnsafeRecoverSuite) TestOneHealthyRegion(c *C) {
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
 						Id:          1,
-						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
 						Peers: []*metapb.Peer{
 							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
 		}},
@@ -91,7 +91,7 @@ func (s *testUnsafeRecoverSuite) TestOneUnhealthyRegion(c *C) {
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
 						Id:          1,
-						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
 						Peers: []*metapb.Peer{
 							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
 		}},
@@ -136,7 +136,7 @@ func (s *testUnsafeRecoverSuite) TestEmptyRange(c *C) {
 						Id:          1,
 						StartKey:    []byte(""),
 						EndKey:      []byte("c"),
-						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
 						Peers: []*metapb.Peer{
 							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
 		}},
@@ -164,7 +164,7 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						Id:          1,
 						StartKey:    []byte(""),
 						EndKey:      []byte("c"),
-						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 20},
 						Peers: []*metapb.Peer{
 							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 31, StoreId: 3}, &metapb.Peer{Id: 41, StoreId: 4}}}}},
 			&pdpb.PeerReport{
@@ -174,7 +174,7 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						Id:          2,
 						StartKey:    []byte("a"),
 						EndKey:      []byte("c"),
-						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 10},
 						Peers: []*metapb.Peer{
 							&metapb.Peer{Id: 12, StoreId: 1}, &metapb.Peer{Id: 22, StoreId: 2}, &metapb.Peer{Id: 32, StoreId: 3}}}}},
 			&pdpb.PeerReport{
@@ -184,7 +184,7 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						Id:          4,
 						StartKey:    []byte("m"),
 						EndKey:      []byte("p"),
-						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 10},
 						Peers: []*metapb.Peer{
 							&metapb.Peer{Id: 14, StoreId: 1}, &metapb.Peer{Id: 24, StoreId: 2}, &metapb.Peer{Id: 44, StoreId: 4}}}}},
 		}},
@@ -194,8 +194,7 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
 						Id:          3,
-						StartKey:    []byte(""),
-						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 5},
 						Peers: []*metapb.Peer{
 							&metapb.Peer{Id: 23, StoreId: 2}, &metapb.Peer{Id: 33, StoreId: 3}, &metapb.Peer{Id: 43, StoreId: 4}}}}},
 			&pdpb.PeerReport{
@@ -205,7 +204,7 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						Id:          2,
 						StartKey:    []byte("a"),
 						EndKey:      []byte("c"),
-						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 10},
 						Peers: []*metapb.Peer{
 							&metapb.Peer{Id: 12, StoreId: 1}, &metapb.Peer{Id: 22, StoreId: 2}, &metapb.Peer{Id: 32, StoreId: 3}}}}},
 			&pdpb.PeerReport{
@@ -215,7 +214,7 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						Id:          4,
 						StartKey:    []byte("m"),
 						EndKey:      []byte("p"),
-						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 10},
 						Peers: []*metapb.Peer{
 							&metapb.Peer{Id: 14, StoreId: 1}, &metapb.Peer{Id: 24, StoreId: 2}, &metapb.Peer{Id: 44, StoreId: 4}}}}},
 		}},
@@ -239,4 +238,91 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 	create := store2Plan.Creates[0]
 	c.Assert(bytes.Compare(create.StartKey, []byte("p")), Equals, 0)
 	c.Assert(bytes.Compare(create.EndKey, []byte("")), Equals, 0)
+}
+
+func (s *testUnsafeRecoverSuite) TestMembershipChange(c *C) {
+	_, opt, _ := newTestScheduleConfig()
+	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
+	recoveryController := newUnsafeRecoveryController(cluster)
+	recoveryController.failedStores = map[uint64]string{
+		4: "",
+		5: "",
+	}
+	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
+		1: &pdpb.StoreReport{StoreId: 1, Reports: []*pdpb.PeerReport{
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						EndKey:      []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 2, Version: 2},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 41, StoreId: 4}, &metapb.Peer{Id: 51, StoreId: 5}}}}},
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          2,
+						StartKey:    []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 41, StoreId: 4}, &metapb.Peer{Id: 51, StoreId: 5}}}}},
+		}},
+		2: &pdpb.StoreReport{StoreId: 2, Reports: []*pdpb.PeerReport{
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          2,
+						StartKey:    []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+		}},
+		3: &pdpb.StoreReport{StoreId: 3, Reports: []*pdpb.PeerReport{
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+			&pdpb.PeerReport{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          2,
+						StartKey:    []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+		}},
+	}
+	recoveryController.generateRecoveryPlan()
+	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 3)
+	store1Plan, ok := recoveryController.storeRecoveryPlans[1]
+	c.Assert(ok, IsTrue)
+	updatedRegion1 := store1Plan.Updates[0]
+	c.Assert(updatedRegion1.Id, Equals, uint64(1))
+	c.Assert(len(updatedRegion1.Peers), Equals, 1)
+	c.Assert(bytes.Compare(updatedRegion1.StartKey, []byte("")), Equals, 0)
+	c.Assert(bytes.Compare(updatedRegion1.EndKey, []byte("c")), Equals, 0)
+
+	store2Plan, ok := recoveryController.storeRecoveryPlans[2]
+	deleteStaleRegion1 := store2Plan.Deletes[0]
+	c.Assert(deleteStaleRegion1, Equals, uint64(1))
+
+	store3Plan, ok := recoveryController.storeRecoveryPlans[3]
+	deleteStaleRegion1 = store3Plan.Deletes[0]
+	c.Assert(deleteStaleRegion1, Equals, uint64(1))
 }
