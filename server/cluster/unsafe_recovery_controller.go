@@ -26,6 +26,8 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/kvproto/pkg/pdpb"
+	"github.com/pingcap/log"
+	"go.uber.org/zap"
 )
 
 type unsafeRecoveryStage int
@@ -75,8 +77,7 @@ func (u *unsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]st
 		if s.IsTombstone() || s.IsPhysicallyDestroyed() {
 			continue
 		}
-		_, exists := failedStores[s.GetID()]
-		if exists {
+		if _, exists := failedStores[s.GetID()]; exists {
 			continue
 		}
 		u.storeReports[s.GetID()] = nil
@@ -96,9 +97,11 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 	switch u.stage {
 	case collectingClusterInfo:
 		if heartbeat.StoreReport == nil {
-			// Inform the store to send detailed report in the next heartbeat.
-			resp.SendDetailedReportInNextHeartbeat = true
-		} else if u.storeReports[heartbeat.StoreReport.StoreId] == nil {
+			if _, failedStore := u.failedStores[heartbeat.Stats.StoreId]; !failedStore {
+				// Inform the store to send detailed report in the next heartbeat.
+				resp.SendDetailedReportInNextHeartbeat = true
+			}
+		} else if report, exist := u.storeReports[heartbeat.StoreReport.StoreId]; exist && report == nil {
 			u.storeReports[heartbeat.StoreReport.StoreId] = heartbeat.StoreReport
 			u.numStoresReported++
 			if u.numStoresReported == len(u.storeReports) {
@@ -106,10 +109,16 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 			}
 		}
 	case recovering:
-		if u.storeRecoveryPlans[heartbeat.StoreReport.StoreId] != nil {
-			if !u.isPlanExecuted(heartbeat.StoreReport) {
+		if len(u.storeRecoveryPlans) == 0 {
+			u.stage = ready
+			u.failedStores = make(map[uint64]string)
+			u.storeReports = make(map[uint64]*pdpb.StoreReport)
+			u.numStoresReported = 0
+			u.storeRecoveryPlans = make(map[uint64]*pdpb.RecoveryPlan)
+		} else if plan, tasked := u.storeRecoveryPlans[heartbeat.Stats.StoreId]; tasked {
+			if heartbeat.StoreReport == nil || !u.isPlanExecuted(heartbeat.StoreReport) {
 				// If the plan has not been executed, send it through the heartbeat response.
-				resp.Plan = u.storeRecoveryPlans[heartbeat.StoreReport.StoreId]
+				resp.Plan = plan
 			} else {
 				u.numStoresPlanExecuted++
 				if u.numStoresPlanExecuted == len(u.storeRecoveryPlans) {
@@ -347,6 +356,10 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 			storeRecoveryPlan = u.storeRecoveryPlans[storeId]
 		}
 		storeRecoveryPlan.Creates = append(storeRecoveryPlan.Creates, create)
+	}
+	log.Info("Plan generated")
+	for store, plan := range u.storeRecoveryPlans {
+		log.Info("Store plan", zap.String("store", strconv.FormatUint(store, 10)), zap.String("plan", proto.MarshalTextString(plan)))
 	}
 	u.stage = recovering
 }
