@@ -271,11 +271,11 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 				newRegion.StartKey = lastEnd
 				newRegion.EndKey = overlapRegion.StartKey
 				if _, inUse := inUseRegions[region.Id]; inUse {
-				    newRegion.Id, _ = u.cluster.AllocID()
-				    creates = append(creates, newRegion)
+					newRegion.Id, _ = u.cluster.AllocID()
+					creates = append(creates, newRegion)
 				} else {
-				    inUseRegions[region.Id] = true
-				    update = newRegion
+					inUseRegions[region.Id] = true
+					update = newRegion
 				}
 				recoveredRanges.ReplaceOrInsert(regionItem{newRegion})
 				if len(overlapRegion.EndKey) == 0 {
@@ -296,10 +296,10 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 			newRegion.EndKey = region.EndKey
 			if _, inUse := inUseRegions[region.Id]; inUse {
 				newRegion.Id, _ = u.cluster.AllocID()
-			        creates = append(creates, newRegion)
+				creates = append(creates, newRegion)
 			} else {
-				    inUseRegions[region.Id] = true
-				    update = newRegion
+				inUseRegions[region.Id] = true
+				update = newRegion
 			}
 			recoveredRanges.ReplaceOrInsert(regionItem{newRegion})
 		}
@@ -311,10 +311,10 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 			}
 			storeRecoveryPlan.Creates = append(storeRecoveryPlan.Creates, creates...)
 			if update != nil {
-			    storeRecoveryPlan.Updates = append(storeRecoveryPlan.Updates, update)
+				storeRecoveryPlan.Updates = append(storeRecoveryPlan.Updates, update)
 			}
 		} else if _, healthy := healthyRegions[region.Id]; !healthy {
-		        // If this peer contributes nothing to the recovered ranges, and it does not belong to a healthy region, delete it.
+			// If this peer contributes nothing to the recovered ranges, and it does not belong to a healthy region, delete it.
 			storeRecoveryPlan, exists := u.storeRecoveryPlans[storeId]
 			if !exists {
 				u.storeRecoveryPlans[storeId] = &pdpb.RecoveryPlan{}
