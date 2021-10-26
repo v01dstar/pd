@@ -231,15 +231,15 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	for storeID, storeReport := range u.storeReports {
 		for _, peerReport := range storeReport.Reports {
 			allPeerReports = append(allPeerReports, &peerStorePair{peerReport, storeID})
-			regionId := peerReport.RegionState.Region.Id
-			if existing, ok := newestRegionReports[regionId]; ok {
+			regionID := peerReport.RegionState.Region.Id
+			if existing, ok := newestRegionReports[regionID]; ok {
 				if existing.RegionState.Region.RegionEpoch.Version >= peerReport.RegionState.Region.RegionEpoch.Version &&
 					existing.RegionState.Region.RegionEpoch.ConfVer >= peerReport.RegionState.Region.RegionEpoch.Version &&
 					existing.RaftState.LastIndex >= peerReport.RaftState.LastIndex {
 					continue
 				}
 			}
-			newestRegionReports[regionId] = peerReport
+			newestRegionReports[regionID] = peerReport
 		}
 	}
 	recoveredRanges := btree.New(2)
