@@ -345,7 +345,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		creates = append(creates, newRegion)
 	}
 	var allStores []uint64
-	for storeId, _ := range u.storeReports {
+	for storeId := range u.storeReports {
 		allStores = append(allStores, storeId)
 	}
 	for idx, create := range creates {

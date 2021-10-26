@@ -50,25 +50,25 @@ func (s *testUnsafeRecoverSuite) TestOneHealthyRegion(c *C) {
 		3: "",
 	}
 	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
-		1: &pdpb.StoreReport{StoreId: 1, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		1: {StoreId: 1, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
 						Id:          1,
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
 		}},
-		2: &pdpb.StoreReport{StoreId: 2, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		2: {StoreId: 2, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
 						Id:          1,
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
 		}},
 	}
 	recoveryController.generateRecoveryPlan()
@@ -85,15 +85,15 @@ func (s *testUnsafeRecoverSuite) TestOneUnhealthyRegion(c *C) {
 		3: "",
 	}
 	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
-		1: &pdpb.StoreReport{StoreId: 1, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		1: {StoreId: 1, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
 						Id:          1,
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
 		}},
 	}
 	recoveryController.generateRecoveryPlan()
@@ -116,8 +116,8 @@ func (s *testUnsafeRecoverSuite) TestEmptyRange(c *C) {
 		3: "",
 	}
 	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
-		1: &pdpb.StoreReport{StoreId: 1, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		1: {StoreId: 1, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -126,10 +126,10 @@ func (s *testUnsafeRecoverSuite) TestEmptyRange(c *C) {
 						EndKey:      []byte("c"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
 		}},
-		2: &pdpb.StoreReport{StoreId: 2, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		2: {StoreId: 2, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -138,13 +138,17 @@ func (s *testUnsafeRecoverSuite) TestEmptyRange(c *C) {
 						EndKey:      []byte("c"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
 		}},
 	}
 	recoveryController.generateRecoveryPlan()
-	create := recoveryController.storeRecoveryPlans[1].Creates[0]
-	c.Assert(bytes.Compare(create.StartKey, []byte("c")), Equals, 0)
-	c.Assert(bytes.Compare(create.EndKey, []byte("")), Equals, 0)
+	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 1)
+	for _, plan := range recoveryController.storeRecoveryPlans {
+		c.Assert(len(plan.Creates), Equals, 1)
+		create := plan.Creates[0]
+		c.Assert(bytes.Compare(create.StartKey, []byte("c")), Equals, 0)
+		c.Assert(bytes.Compare(create.EndKey, []byte("")), Equals, 0)
+	}
 }
 
 func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
@@ -156,8 +160,8 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 		4: "",
 	}
 	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
-		1: &pdpb.StoreReport{StoreId: 1, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		1: {StoreId: 1, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -166,8 +170,8 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						EndKey:      []byte("c"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 20},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 31, StoreId: 3}, &metapb.Peer{Id: 41, StoreId: 4}}}}},
-			&pdpb.PeerReport{
+							{Id: 11, StoreId: 1}, {Id: 31, StoreId: 3}, {Id: 41, StoreId: 4}}}}},
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -176,8 +180,8 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						EndKey:      []byte("c"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 10},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 12, StoreId: 1}, &metapb.Peer{Id: 22, StoreId: 2}, &metapb.Peer{Id: 32, StoreId: 3}}}}},
-			&pdpb.PeerReport{
+							{Id: 12, StoreId: 1}, {Id: 22, StoreId: 2}, {Id: 32, StoreId: 3}}}}},
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -186,18 +190,18 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						EndKey:      []byte("p"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 10},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 14, StoreId: 1}, &metapb.Peer{Id: 24, StoreId: 2}, &metapb.Peer{Id: 44, StoreId: 4}}}}},
+							{Id: 14, StoreId: 1}, {Id: 24, StoreId: 2}, {Id: 44, StoreId: 4}}}}},
 		}},
-		2: &pdpb.StoreReport{StoreId: 2, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		2: {StoreId: 2, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
 						Id:          3,
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 5},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 23, StoreId: 2}, &metapb.Peer{Id: 33, StoreId: 3}, &metapb.Peer{Id: 43, StoreId: 4}}}}},
-			&pdpb.PeerReport{
+							{Id: 23, StoreId: 2}, {Id: 33, StoreId: 3}, {Id: 43, StoreId: 4}}}}},
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -206,8 +210,8 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						EndKey:      []byte("c"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 10},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 12, StoreId: 1}, &metapb.Peer{Id: 22, StoreId: 2}, &metapb.Peer{Id: 32, StoreId: 3}}}}},
-			&pdpb.PeerReport{
+							{Id: 12, StoreId: 1}, {Id: 22, StoreId: 2}, {Id: 32, StoreId: 3}}}}},
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -216,7 +220,7 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 						EndKey:      []byte("p"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 10},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 14, StoreId: 1}, &metapb.Peer{Id: 24, StoreId: 2}, &metapb.Peer{Id: 44, StoreId: 4}}}}},
+							{Id: 14, StoreId: 1}, {Id: 24, StoreId: 2}, {Id: 44, StoreId: 4}}}}},
 		}},
 	}
 	recoveryController.generateRecoveryPlan()
@@ -249,8 +253,8 @@ func (s *testUnsafeRecoverSuite) TestMembershipChange(c *C) {
 		5: "",
 	}
 	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
-		1: &pdpb.StoreReport{StoreId: 1, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		1: {StoreId: 1, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -258,8 +262,8 @@ func (s *testUnsafeRecoverSuite) TestMembershipChange(c *C) {
 						EndKey:      []byte("c"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 2, Version: 2},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 41, StoreId: 4}, &metapb.Peer{Id: 51, StoreId: 5}}}}},
-			&pdpb.PeerReport{
+							{Id: 11, StoreId: 1}, {Id: 41, StoreId: 4}, {Id: 51, StoreId: 5}}}}},
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -267,18 +271,18 @@ func (s *testUnsafeRecoverSuite) TestMembershipChange(c *C) {
 						StartKey:    []byte("c"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 41, StoreId: 4}, &metapb.Peer{Id: 51, StoreId: 5}}}}},
+							{Id: 11, StoreId: 1}, {Id: 41, StoreId: 4}, {Id: 51, StoreId: 5}}}}},
 		}},
-		2: &pdpb.StoreReport{StoreId: 2, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		2: {StoreId: 2, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
 						Id:          1,
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
-			&pdpb.PeerReport{
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -286,18 +290,18 @@ func (s *testUnsafeRecoverSuite) TestMembershipChange(c *C) {
 						StartKey:    []byte("c"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
 		}},
-		3: &pdpb.StoreReport{StoreId: 3, Reports: []*pdpb.PeerReport{
-			&pdpb.PeerReport{
+		3: {StoreId: 3, Reports: []*pdpb.PeerReport{
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
 						Id:          1,
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
-			&pdpb.PeerReport{
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
+			{
 				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
 				RegionState: &raft_serverpb.RegionLocalState{
 					Region: &metapb.Region{
@@ -305,7 +309,7 @@ func (s *testUnsafeRecoverSuite) TestMembershipChange(c *C) {
 						StartKey:    []byte("c"),
 						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
 						Peers: []*metapb.Peer{
-							&metapb.Peer{Id: 11, StoreId: 1}, &metapb.Peer{Id: 21, StoreId: 2}, &metapb.Peer{Id: 31, StoreId: 3}}}}},
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
 		}},
 	}
 	recoveryController.generateRecoveryPlan()
