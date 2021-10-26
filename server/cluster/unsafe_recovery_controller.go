@@ -184,7 +184,7 @@ func (u *unsafeRecoveryController) canElectLeader(region *metapb.Region) bool {
 	return numFailedPeers*2 < len(region.Peers)
 }
 
-func (u *unsafeRecoveryController) removeFailedStores(region *metapb.Region) bool {
+func (u *unsafeRecoveryController) removeFailedPeers(region *metapb.Region) bool {
 	updated := false
 	var newPeerList []*metapb.Peer
 	for _, peer := range region.Peers {
@@ -259,7 +259,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	})
 	for _, peerStorePair := range allPeerReports {
 		region := peerStorePair.peer.RegionState.Region
-		u.removeFailedStores(region)
+		u.removeFailedPeers(region)
 		storeID := peerStorePair.storeID
 		lastEnd := region.StartKey
 		reachedTheEnd := false
