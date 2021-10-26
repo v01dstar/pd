@@ -233,7 +233,7 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 	c.Assert(bytes.Compare(updatedRegion1.StartKey, []byte("")), Equals, 0)
 	c.Assert(bytes.Compare(updatedRegion1.EndKey, []byte("a")), Equals, 0)
 
-	store2Plan, ok := recoveryController.storeRecoveryPlans[2]
+	store2Plan := recoveryController.storeRecoveryPlans[2]
 	updatedRegion3 := store2Plan.Updates[0]
 	c.Assert(updatedRegion3.Id, Equals, uint64(3))
 	c.Assert(len(updatedRegion3.Peers), Equals, 1)
@@ -322,11 +322,11 @@ func (s *testUnsafeRecoverSuite) TestMembershipChange(c *C) {
 	c.Assert(bytes.Compare(updatedRegion1.StartKey, []byte("")), Equals, 0)
 	c.Assert(bytes.Compare(updatedRegion1.EndKey, []byte("c")), Equals, 0)
 
-	store2Plan, ok := recoveryController.storeRecoveryPlans[2]
+	store2Plan := recoveryController.storeRecoveryPlans[2]
 	deleteStaleRegion1 := store2Plan.Deletes[0]
 	c.Assert(deleteStaleRegion1, Equals, uint64(1))
 
-	store3Plan, ok := recoveryController.storeRecoveryPlans[3]
+	store3Plan := recoveryController.storeRecoveryPlans[3]
 	deleteStaleRegion1 = store3Plan.Deletes[0]
 	c.Assert(deleteStaleRegion1, Equals, uint64(1))
 }

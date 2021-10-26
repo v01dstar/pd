@@ -139,14 +139,14 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 func (u *unsafeRecoveryController) isPlanExecuted(report *pdpb.StoreReport) bool {
 	targetRegions := make(map[uint64]*metapb.Region)
 	toBeRemovedRegions := make(map[uint64]bool)
-	storeId := report.StoreId
-	for _, create := range u.storeRecoveryPlans[storeId].Creates {
+	storeID := report.StoreId
+	for _, create := range u.storeRecoveryPlans[storeID].Creates {
 		targetRegions[create.Id] = create
 	}
-	for _, update := range u.storeRecoveryPlans[storeId].Updates {
+	for _, update := range u.storeRecoveryPlans[storeID].Updates {
 		targetRegions[update.Id] = update
 	}
-	for _, del := range u.storeRecoveryPlans[storeId].Deletes {
+	for _, del := range u.storeRecoveryPlans[storeID].Deletes {
 		toBeRemovedRegions[del] = true
 	}
 	numFinished := 0
@@ -200,7 +200,7 @@ func (u *unsafeRecoveryController) removeFailedStores(region *metapb.Region) boo
 
 type peerStorePair struct {
 	peer    *pdpb.PeerReport
-	storeId uint64
+	storeID uint64
 }
 
 func getOverlapRanges(tree *btree.BTree, region *metapb.Region) []*metapb.Region {
@@ -228,9 +228,9 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	defer u.Unlock()
 	newestRegionReports := make(map[uint64]*pdpb.PeerReport)
 	var allPeerReports []*peerStorePair
-	for storeId, storeReport := range u.storeReports {
+	for storeID, storeReport := range u.storeReports {
 		for _, peerReport := range storeReport.Reports {
-			allPeerReports = append(allPeerReports, &peerStorePair{peerReport, storeId})
+			allPeerReports = append(allPeerReports, &peerStorePair{peerReport, storeID})
 			regionId := peerReport.RegionState.Region.Id
 			if existing, ok := newestRegionReports[regionId]; ok {
 				if existing.RegionState.Region.RegionEpoch.Version >= peerReport.RegionState.Region.RegionEpoch.Version &&
@@ -260,7 +260,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	for _, peerStorePair := range allPeerReports {
 		region := peerStorePair.peer.RegionState.Region
 		u.removeFailedStores(region)
-		storeId := peerStorePair.storeId
+		storeID := peerStorePair.storeID
 		lastEnd := region.StartKey
 		reachedTheEnd := false
 		var creates []*metapb.Region
@@ -304,10 +304,10 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 			recoveredRanges.ReplaceOrInsert(regionItem{newRegion})
 		}
 		if len(creates) != 0 || update != nil {
-			storeRecoveryPlan, exists := u.storeRecoveryPlans[storeId]
+			storeRecoveryPlan, exists := u.storeRecoveryPlans[storeID]
 			if !exists {
-				u.storeRecoveryPlans[storeId] = &pdpb.RecoveryPlan{}
-				storeRecoveryPlan = u.storeRecoveryPlans[storeId]
+				u.storeRecoveryPlans[storeID] = &pdpb.RecoveryPlan{}
+				storeRecoveryPlan = u.storeRecoveryPlans[storeID]
 			}
 			storeRecoveryPlan.Creates = append(storeRecoveryPlan.Creates, creates...)
 			if update != nil {
@@ -315,10 +315,10 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 			}
 		} else if _, healthy := healthyRegions[region.Id]; !healthy {
 			// If this peer contributes nothing to the recovered ranges, and it does not belong to a healthy region, delete it.
-			storeRecoveryPlan, exists := u.storeRecoveryPlans[storeId]
+			storeRecoveryPlan, exists := u.storeRecoveryPlans[storeID]
 			if !exists {
-				u.storeRecoveryPlans[storeId] = &pdpb.RecoveryPlan{}
-				storeRecoveryPlan = u.storeRecoveryPlans[storeId]
+				u.storeRecoveryPlans[storeID] = &pdpb.RecoveryPlan{}
+				storeRecoveryPlan = u.storeRecoveryPlans[storeID]
 			}
 			storeRecoveryPlan.Deletes = append(storeRecoveryPlan.Deletes, region.Id)
 		}
@@ -328,7 +328,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	var creates []*metapb.Region
 	recoveredRanges.Ascend(func(item btree.Item) bool {
 		region := item.(regionItem).region
-		if bytes.Compare(region.StartKey, lastEnd) != 0 {
+		if !bytes.Equal(region.StartKey, lastEnd) {
 			newRegion := &metapb.Region{}
 			newRegion.StartKey = lastEnd
 			newRegion.EndKey = region.StartKey
@@ -338,22 +338,22 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		lastEnd = region.EndKey
 		return true
 	})
-	if bytes.Compare(lastEnd, []byte("")) != 0 {
+	if !bytes.Equal(lastEnd, []byte("")) {
 		newRegion := &metapb.Region{}
 		newRegion.StartKey = lastEnd
 		newRegion.Id, _ = u.cluster.AllocID()
 		creates = append(creates, newRegion)
 	}
 	var allStores []uint64
-	for storeId := range u.storeReports {
-		allStores = append(allStores, storeId)
+	for storeID := range u.storeReports {
+		allStores = append(allStores, storeID)
 	}
 	for idx, create := range creates {
-		storeId := allStores[idx%len(allStores)]
-		storeRecoveryPlan, exists := u.storeRecoveryPlans[storeId]
+		storeID := allStores[idx%len(allStores)]
+		storeRecoveryPlan, exists := u.storeRecoveryPlans[storeID]
 		if !exists {
-			u.storeRecoveryPlans[storeId] = &pdpb.RecoveryPlan{}
-			storeRecoveryPlan = u.storeRecoveryPlans[storeId]
+			u.storeRecoveryPlans[storeID] = &pdpb.RecoveryPlan{}
+			storeRecoveryPlan = u.storeRecoveryPlans[storeID]
 		}
 		storeRecoveryPlan.Creates = append(storeRecoveryPlan.Creates, create)
 	}
