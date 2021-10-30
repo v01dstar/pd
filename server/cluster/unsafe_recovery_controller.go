@@ -16,7 +16,6 @@ package cluster
 
 import (
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"sort"
 	"strconv"
@@ -38,6 +37,7 @@ const (
 	ready unsafeRecoveryStage = iota
 	collectingClusterInfo
 	recovering
+	finished
 )
 
 type unsafeRecoveryController struct {
@@ -75,7 +75,7 @@ func (u *unsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]st
 	if len(failedStores) == 0 {
 		return errors.Errorf("No store specified")
 	}
-	if u.stage != ready {
+	if u.stage != ready && u.stage != finished {
 		return errors.Errorf("Another request is working in progress")
 	}
 	u.reset()
@@ -133,6 +133,7 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 					for _, history := range u.History() {
 						log.Info(history)
 					}
+					u.stage = finished
 				}
 			}
 
@@ -360,8 +361,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 			newRegion.StartKey = lastEnd
 			newRegion.EndKey = region.StartKey
 			newRegion.Id, _ = u.cluster.AllocID()
-			newRegion.RegionEpoch.ConfVer = 1
-			newRegion.RegionEpoch.Version = 1
+			newRegion.RegionEpoch = &metapb.RegionEpoch{ConfVer: 1, Version: 1}
 			creates = append(creates, newRegion)
 		}
 		lastEnd = region.EndKey
@@ -391,7 +391,7 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 	log.Info("Plan generated")
 	if len(u.storeRecoveryPlans) == 0 {
 		log.Info("Nothing to do")
-		u.stage = ready
+		u.stage = finished
 		return
 	}
 	for store, plan := range u.storeRecoveryPlans {
@@ -409,8 +409,8 @@ func getRegionDigest(region *metapb.Region) string {
 		return "nil"
 	}
 	regionID := strconv.FormatUint(region.Id, 10)
-	regionStartKey := hex.EncodeToString(region.StartKey)
-	regionEndKey := hex.EncodeToString(region.EndKey)
+	regionStartKey := core.HexRegionKeyStr(region.StartKey)
+	regionEndKey := core.HexRegionKeyStr(region.EndKey)
 	var peers string
 	for _, peer := range region.Peers {
 		peers += "(" + getPeerDigest(peer) + "), "
@@ -476,6 +476,8 @@ func (u *unsafeRecoveryController) Show() []string {
 			}
 		}
 		return status
+	case finished:
+		return []string{"Last recovery has finished."}
 	}
 	return []string{"Undefined status"}
 }
@@ -485,7 +487,7 @@ func (u *unsafeRecoveryController) History() []string {
 	u.RLock()
 	defer u.RUnlock()
 	if u.stage <= ready {
-		return []string{"No on-going operation."}
+		return []string{"No unasfe recover has been triggered since PD restarted."}
 	}
 	var history []string
 	if u.stage >= collectingClusterInfo {
