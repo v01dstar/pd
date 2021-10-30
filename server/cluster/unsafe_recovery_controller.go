@@ -130,9 +130,11 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 				u.numStoresPlanExecuted++
 				if u.numStoresPlanExecuted == len(u.storeRecoveryPlans) {
 					log.Info("Recover finished.")
-					for _, history := range u.History() {
-						log.Info(history)
-					}
+					go func() {
+						for _, history := range u.History() {
+							log.Info(history)
+						}
+					}()
 					u.stage = finished
 				}
 			}

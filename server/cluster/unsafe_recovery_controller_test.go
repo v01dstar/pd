@@ -42,7 +42,7 @@ func (s *testUnsafeRecoverSuite) SetUpTest(c *C) {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 }
 
-func (s *testUnsafeRecoverSuite) TestOneHealthyRegion(c *C) {
+func (s *testUnsafeRecoverSuite) TestPlanGenerationOneHealthyRegion(c *C) {
 	_, opt, _ := newTestScheduleConfig()
 	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
 	recoveryController := newUnsafeRecoveryController(cluster)
@@ -76,7 +76,7 @@ func (s *testUnsafeRecoverSuite) TestOneHealthyRegion(c *C) {
 	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 0)
 }
 
-func (s *testUnsafeRecoverSuite) TestOneUnhealthyRegion(c *C) {
+func (s *testUnsafeRecoverSuite) TestPlanGenerationOneUnhealthyRegion(c *C) {
 	_, opt, _ := newTestScheduleConfig()
 	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
 	recoveryController := newUnsafeRecoveryController(cluster)
@@ -108,7 +108,51 @@ func (s *testUnsafeRecoverSuite) TestOneUnhealthyRegion(c *C) {
 	c.Assert(update.Peers[0].StoreId, Equals, uint64(1))
 }
 
-func (s *testUnsafeRecoverSuite) TestEmptyRange(c *C) {
+func (s *testUnsafeRecoverSuite) TestPlanGenerationEmptyRange(c *C) {
+	_, opt, _ := newTestScheduleConfig()
+	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
+	recoveryController := newUnsafeRecoveryController(cluster)
+	recoveryController.failedStores = map[uint64]string{
+		3: "",
+	}
+	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
+		1: {PeerReports: []*pdpb.PeerReport{
+			{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						EndKey:      []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}}}}},
+		}},
+		2: {PeerReports: []*pdpb.PeerReport{
+			{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          2,
+						StartKey:    []byte("d"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							{Id: 12, StoreId: 1}, {Id: 22, StoreId: 2}, {Id: 32, StoreId: 3}}}}},
+		}},
+	}
+	recoveryController.generateRecoveryPlan()
+	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 1)
+	for storeID, plan := range recoveryController.storeRecoveryPlans {
+		c.Assert(len(plan.Creates), Equals, 1)
+		create := plan.Creates[0]
+		c.Assert(bytes.Compare(create.StartKey, []byte("c")), Equals, 0)
+		c.Assert(bytes.Compare(create.EndKey, []byte("d")), Equals, 0)
+		c.Assert(len(create.Peers), Equals, 1)
+		c.Assert(create.Peers[0].StoreId, Equals, storeID)
+		c.Assert(create.Peers[0].Role, Equals, metapb.PeerRole_Voter)
+	}
+}
+
+func (s *testUnsafeRecoverSuite) TestPlanGenerationEmptyRangeAtTheEnd(c *C) {
 	_, opt, _ := newTestScheduleConfig()
 	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
 	recoveryController := newUnsafeRecoveryController(cluster)
@@ -154,7 +198,7 @@ func (s *testUnsafeRecoverSuite) TestEmptyRange(c *C) {
 	}
 }
 
-func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
+func (s *testUnsafeRecoverSuite) TestPlanGenerationUseNewestRanges(c *C) {
 	_, opt, _ := newTestScheduleConfig()
 	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
 	recoveryController := newUnsafeRecoveryController(cluster)
@@ -247,7 +291,7 @@ func (s *testUnsafeRecoverSuite) TestUseNewestRanges(c *C) {
 	c.Assert(bytes.Compare(create.EndKey, []byte("")), Equals, 0)
 }
 
-func (s *testUnsafeRecoverSuite) TestMembershipChange(c *C) {
+func (s *testUnsafeRecoverSuite) TestPlanGenerationMembershipChange(c *C) {
 	_, opt, _ := newTestScheduleConfig()
 	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
 	recoveryController := newUnsafeRecoveryController(cluster)
@@ -334,7 +378,7 @@ func (s *testUnsafeRecoverSuite) TestMembershipChange(c *C) {
 	c.Assert(deleteStaleRegion1, Equals, uint64(1))
 }
 
-func (s *testUnsafeRecoverSuite) TestPromotingLearner(c *C) {
+func (s *testUnsafeRecoverSuite) TestPlanGenerationPromotingLearner(c *C) {
 	_, opt, _ := newTestScheduleConfig()
 	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
 	recoveryController := newUnsafeRecoveryController(cluster)
@@ -367,7 +411,7 @@ func (s *testUnsafeRecoverSuite) TestPromotingLearner(c *C) {
 	c.Assert(update.Peers[0].Role, Equals, metapb.PeerRole_Voter)
 }
 
-func (s *testUnsafeRecoverSuite) TestKeepingOneReplica(c *C) {
+func (s *testUnsafeRecoverSuite) TestPlanGenerationKeepingOneReplica(c *C) {
 	_, opt, _ := newTestScheduleConfig()
 	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
 	recoveryController := newUnsafeRecoveryController(cluster)
@@ -416,4 +460,160 @@ func (s *testUnsafeRecoverSuite) TestKeepingOneReplica(c *C) {
 	}
 	c.Assert(foundUpdate, Equals, true)
 	c.Assert(foundDelete, Equals, true)
+}
+
+func (s *testUnsafeRecoverSuite) TestReportCollection(c *C) {
+	_, opt, _ := newTestScheduleConfig()
+	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
+	recoveryController := newUnsafeRecoveryController(cluster)
+	recoveryController.stage = collectingClusterInfo
+	recoveryController.failedStores = map[uint64]string{
+		3: "",
+		4: "",
+	}
+	recoveryController.storeReports[uint64(1)] = nil
+	recoveryController.storeReports[uint64(2)] = nil
+	store1Report := &pdpb.StoreReport{
+		PeerReports: []*pdpb.PeerReport{
+			{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						Peers: []*metapb.Peer{
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}, {Id: 41, StoreId: 4}}}}},
+		}}
+	store2Report := &pdpb.StoreReport{
+		PeerReports: []*pdpb.PeerReport{
+			{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 1},
+						Peers: []*metapb.Peer{
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2}, {Id: 31, StoreId: 3}, {Id: 41, StoreId: 4}}}}},
+		}}
+	heartbeat := &pdpb.StoreHeartbeatRequest{Stats: &pdpb.StoreStats{StoreId: 1}}
+	resp := &pdpb.StoreHeartbeatResponse{}
+	recoveryController.HandleStoreHeartbeat(heartbeat, resp)
+	c.Assert(resp.RequireDetailedReport, Equals, true)
+
+	heartbeat.StoreReport = store1Report
+	recoveryController.HandleStoreHeartbeat(heartbeat, resp)
+	c.Assert(recoveryController.numStoresReported, Equals, 1)
+	c.Assert(recoveryController.storeReports[uint64(1)], Equals, store1Report)
+
+	heartbeat.Stats.StoreId = uint64(2)
+	heartbeat.StoreReport = store2Report
+	recoveryController.HandleStoreHeartbeat(heartbeat, resp)
+	c.Assert(recoveryController.numStoresReported, Equals, 2)
+	c.Assert(recoveryController.storeReports[uint64(2)], Equals, store2Report)
+}
+
+func (s *testUnsafeRecoverSuite) TestPlanExecution(c *C) {
+	_, opt, _ := newTestScheduleConfig()
+	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
+	recoveryController := newUnsafeRecoveryController(cluster)
+	recoveryController.stage = recovering
+	recoveryController.failedStores = map[uint64]string{
+		3: "",
+		4: "",
+	}
+	recoveryController.storeReports[uint64(1)] = nil
+	recoveryController.storeReports[uint64(2)] = nil
+	recoveryController.storeRecoveryPlans[uint64(1)] = &pdpb.RecoveryPlan{
+		Creates: []*metapb.Region{
+			{
+				Id:       4,
+				StartKey: []byte("f"),
+				Peers:    []*metapb.Peer{{Id: 14, StoreId: 1}},
+			},
+		},
+		Updates: []*metapb.Region{
+			{
+				Id:       5,
+				StartKey: []byte("c"),
+				EndKey:   []byte("f"),
+				Peers:    []*metapb.Peer{{Id: 15, StoreId: 1}},
+			},
+		},
+	}
+	recoveryController.storeRecoveryPlans[uint64(2)] = &pdpb.RecoveryPlan{
+		Updates: []*metapb.Region{
+			{
+				Id:     3,
+				EndKey: []byte("c"),
+				Peers:  []*metapb.Peer{{Id: 23, StoreId: 2}},
+			},
+		},
+		Deletes: []uint64{2},
+	}
+	store1Report := &pdpb.StoreReport{
+		PeerReports: []*pdpb.PeerReport{
+			{
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:       4,
+						StartKey: []byte("f"),
+						Peers:    []*metapb.Peer{{Id: 14, StoreId: 1}}}},
+			},
+			{
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:       5,
+						StartKey: []byte("c"),
+						EndKey:   []byte("f"),
+						Peers:    []*metapb.Peer{{Id: 15, StoreId: 1}}}},
+			},
+		}}
+	heartbeat := &pdpb.StoreHeartbeatRequest{Stats: &pdpb.StoreStats{StoreId: 1}, StoreReport: store1Report}
+	resp := &pdpb.StoreHeartbeatResponse{}
+	recoveryController.HandleStoreHeartbeat(heartbeat, resp)
+	c.Assert(recoveryController.numStoresPlanExecuted, Equals, 1)
+
+	store2Report := &pdpb.StoreReport{
+		PeerReports: []*pdpb.PeerReport{
+			{
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:       2,
+						StartKey: []byte("g"),
+						Peers:    []*metapb.Peer{{Id: 12, StoreId: 2}}}},
+			},
+		}}
+	heartbeat.Stats.StoreId = uint64(2)
+	heartbeat.StoreReport = store2Report
+	recoveryController.HandleStoreHeartbeat(heartbeat, resp)
+	c.Assert(recoveryController.numStoresPlanExecuted, Equals, 1)
+
+	store2Report = &pdpb.StoreReport{
+		PeerReports: []*pdpb.PeerReport{
+			{
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:     3,
+						EndKey: []byte("f"),
+						Peers:  []*metapb.Peer{{Id: 13, StoreId: 2}}}},
+			},
+		}}
+	heartbeat.StoreReport = store2Report
+	recoveryController.HandleStoreHeartbeat(heartbeat, resp)
+	c.Assert(recoveryController.numStoresPlanExecuted, Equals, 1)
+
+	store2Report = &pdpb.StoreReport{
+		PeerReports: []*pdpb.PeerReport{
+			{
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:     3,
+						EndKey: []byte("c"),
+						Peers:  []*metapb.Peer{{Id: 13, StoreId: 2}}}},
+			},
+		}}
+	heartbeat.StoreReport = store2Report
+	recoveryController.HandleStoreHeartbeat(heartbeat, resp)
+	c.Assert(recoveryController.numStoresPlanExecuted, Equals, 2)
+	c.Assert(recoveryController.stage, Equals, finished)
 }
