@@ -46,13 +46,13 @@ func (s *unsafeOperationTestSuite) TestRemoveFailedStores(c *C) {
 	cmd := pdctlCmd.GetRootCmd()
 	defer cluster.Destroy()
 
-	args := []string{"-u", pdAddr, "unsafe", "remove-failed-stores", "1,2,3"}
+	args := []string{"-u", pdAddr, "admin", "unsafe", "remove-failed-stores", "1,2,3"}
 	_, err = pdctl.ExecuteCommand(cmd, args...)
 	c.Assert(err, IsNil)
-	args = []string{"-u", pdAddr, "unsafe", "remove-failed-stores", "show"}
+	args = []string{"-u", pdAddr, "admin", "unsafe", "remove-failed-stores", "show"}
 	_, err = pdctl.ExecuteCommand(cmd, args...)
 	c.Assert(err, IsNil)
-	args = []string{"-u", pdAddr, "unsafe", "remove-failed-stores", "history"}
+	args = []string{"-u", pdAddr, "admin", "unsafe", "remove-failed-stores", "history"}
 	_, err = pdctl.ExecuteCommand(cmd, args...)
 	c.Assert(err, IsNil)
 }

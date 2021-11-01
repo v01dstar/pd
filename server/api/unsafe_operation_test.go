@@ -35,7 +35,7 @@ func (s *testUnsafeAPISuite) SetUpSuite(c *C) {
 	mustWaitLeader(c, []*server.Server{s.svr})
 
 	addr := s.svr.GetAddr()
-	s.urlPrefix = fmt.Sprintf("%s%s/api/v1/unsafe", addr, apiPrefix)
+	s.urlPrefix = fmt.Sprintf("%s%s/api/v1/admin/unsafe", addr, apiPrefix)
 
 	mustBootstrapCluster(c, s.svr)
 }

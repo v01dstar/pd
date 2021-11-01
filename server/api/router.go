@@ -267,11 +267,11 @@ func createRouter(prefix string, svr *server.Server) *mux.Router {
 
 	// unsafe admin operation API
 	unsafeOperationHandler := newUnsafeOperationHandler(svr, rd)
-	clusterRouter.HandleFunc("/unsafe/remove-failed-stores",
+	clusterRouter.HandleFunc("/admin/unsafe/remove-failed-stores",
 		unsafeOperationHandler.RemoveFailedStores).Methods("POST")
-	clusterRouter.HandleFunc("/unsafe/remove-failed-stores/show",
+	clusterRouter.HandleFunc("/admin/unsafe/remove-failed-stores/show",
 		unsafeOperationHandler.GetFailedStoresRemovalStatus).Methods("GET")
-	clusterRouter.HandleFunc("/unsafe/remove-failed-stores/history",
+	clusterRouter.HandleFunc("/admin/unsafe/remove-failed-stores/history",
 		unsafeOperationHandler.GetFailedStoresRemovalHistory).Methods("GET")
 
 	// API to set or unset failpoints

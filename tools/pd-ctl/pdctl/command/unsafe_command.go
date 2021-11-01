@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const unsafePrefix = "pd/api/v1/unsafe"
+const unsafePrefix = "pd/api/v1/admin/unsafe"
 
 // NewUnsafeCommand returns the unsafe subcommand of rootCmd.
 func NewUnsafeCommand() *cobra.Command {
