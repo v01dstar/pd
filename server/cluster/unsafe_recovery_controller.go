@@ -227,9 +227,45 @@ func keepOneReplica(storeID uint64, region *metapb.Region) {
 	region.Peers = newPeerList
 }
 
+func keepSelfAndLearners(storeID uint64, region *metapb.Region) bool {
+	var newPeerList []*metapb.Peer
+	containsLearners := false
+	for _, peer := range region.Peers {
+		if peer.StoreId == storeID {
+			if peer.Role != metapb.PeerRole_Voter {
+				peer.Role = metapb.PeerRole_Voter
+			}
+			newPeerList = append(newPeerList, peer)
+		} else if peer.Role == metapb.PeerRole_Learner {
+			containsLearners = true
+			newPeerList = append(newPeerList, peer)
+		}
+	}
+	region.Peers = newPeerList
+	return containsLearners
+}
+
 type peerStorePair struct {
 	peer    *pdpb.PeerReport
 	storeID uint64
+}
+
+func getPeerRole(storeID uint64, region *metapb.Region) metapb.PeerRole {
+	for _, peer := range region.Peers {
+		if peer.StoreId == storeID {
+			return peer.Role
+		}
+	}
+	return metapb.PeerRole_DemotingVoter + 1
+}
+
+func getPeerID(storeID uint64, region *metapb.Region) uint64 {
+	for _, peer := range region.Peers {
+		if peer.StoreId == storeID {
+			return peer.Id
+		}
+	}
+	return 0
 }
 
 func getOverlapRanges(tree *btree.BTree, region *metapb.Region) []*metapb.Region {
@@ -242,7 +278,7 @@ func getOverlapRanges(tree *btree.BTree, region *metapb.Region) []*metapb.Region
 	})
 
 	tree.AscendGreaterOrEqual(regionItem{region}, func(item btree.Item) bool {
-		if len(region.EndKey) != 0 && bytes.Compare(item.(regionItem).region.StartKey, region.EndKey) > 0 {
+		if len(region.EndKey) != 0 && bytes.Compare(item.(regionItem).region.StartKey, region.EndKey) >= 0 {
 			return false
 		}
 		overlapRanges = append(overlapRanges, item.(regionItem).region)
@@ -283,8 +319,29 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		}
 	}
 	sort.SliceStable(allPeerReports, func(i, j int) bool {
-		return allPeerReports[i].peer.RegionState.Region.RegionEpoch.Version > allPeerReports[j].peer.RegionState.Region.RegionEpoch.Version
+		peerI, peerJ := allPeerReports[i].peer, allPeerReports[j].peer
+		storeI, storeJ := allPeerReports[i].storeID, allPeerReports[j].storeID
+		if peerI.RegionState.Region.RegionEpoch.Version > peerJ.RegionState.Region.RegionEpoch.Version {
+			return true
+		}
+		if peerI.RegionState.Region.RegionEpoch.ConfVer > peerJ.RegionState.Region.RegionEpoch.ConfVer {
+			return true
+		}
+		if peerI.RegionState.Region.RegionEpoch.Version == peerJ.RegionState.Region.RegionEpoch.Version &&
+			peerI.RegionState.Region.RegionEpoch.ConfVer == peerJ.RegionState.Region.RegionEpoch.ConfVer &&
+			peerI.RegionState.Region.Id == peerJ.RegionState.Region.Id {
+			if peerI.RaftState.LastIndex > peerJ.RaftState.LastIndex {
+				return true
+			}
+			if peerI.RaftState.LastIndex == peerJ.RaftState.LastIndex &&
+				getPeerRole(storeI, peerI.RegionState.Region) < getPeerRole(storeJ, peerJ.RegionState.Region) {
+				return true
+			}
+		}
+		return false
 	})
+	scanedPeers := make(map[uint64]bool)
+	keepLearners := make(map[uint64][]*metapb.Peer)
 	for _, peerStorePair := range allPeerReports {
 		region := peerStorePair.peer.RegionState.Region
 		storeID := peerStorePair.storeID
@@ -320,9 +377,26 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 		}
 		if !reachedTheEnd && (bytes.Compare(lastEnd, region.EndKey) < 0 || len(region.EndKey) == 0) {
 			newRegion := proto.Clone(region).(*metapb.Region)
-			keepOneReplica(storeID, newRegion)
 			newRegion.StartKey = lastEnd
 			newRegion.EndKey = region.EndKey
+			if bytes.Equal(lastEnd, region.StartKey) {
+				firstPeer := true
+				for _, peer := range region.Peers {
+					if _, exists := scanedPeers[peer.Id]; exists {
+						firstPeer = false
+						break
+					}
+				}
+				if firstPeer {
+					if keepSelfAndLearners(storeID, newRegion) {
+						keepLearners[newRegion.Id] = newRegion.Peers
+					}
+				} else {
+					keepOneReplica(storeID, newRegion)
+				}
+			} else {
+				keepOneReplica(storeID, newRegion)
+			}
 			if _, inUse := inUseRegions[region.Id]; inUse {
 				newRegion.Id, _ = u.cluster.AllocID()
 				creates = append(creates, newRegion)
@@ -343,14 +417,26 @@ func (u *unsafeRecoveryController) generateRecoveryPlan() {
 				storeRecoveryPlan.Updates = append(storeRecoveryPlan.Updates, update)
 			}
 		} else if _, healthy := healthyRegions[region.Id]; !healthy {
-			// If this peer contributes nothing to the recovered ranges, and it does not belong to a healthy region, delete it.
-			storeRecoveryPlan, exists := u.storeRecoveryPlans[storeID]
-			if !exists {
-				u.storeRecoveryPlans[storeID] = &pdpb.RecoveryPlan{}
-				storeRecoveryPlan = u.storeRecoveryPlans[storeID]
+			if peers, exists := keepLearners[region.Id]; exists {
+				newRegion := proto.Clone(region).(*metapb.Region)
+				newRegion.Peers = peers
+				storeRecoveryPlan, exists := u.storeRecoveryPlans[storeID]
+				if !exists {
+					u.storeRecoveryPlans[storeID] = &pdpb.RecoveryPlan{}
+					storeRecoveryPlan = u.storeRecoveryPlans[storeID]
+				}
+				storeRecoveryPlan.Updates = append(storeRecoveryPlan.Updates, newRegion)
+			} else {
+				// If this peer contributes nothing to the recovered ranges, and it does not belong to a healthy region, delete it.
+				storeRecoveryPlan, exists := u.storeRecoveryPlans[storeID]
+				if !exists {
+					u.storeRecoveryPlans[storeID] = &pdpb.RecoveryPlan{}
+					storeRecoveryPlan = u.storeRecoveryPlans[storeID]
+				}
+				storeRecoveryPlan.Deletes = append(storeRecoveryPlan.Deletes, region.Id)
 			}
-			storeRecoveryPlan.Deletes = append(storeRecoveryPlan.Deletes, region.Id)
 		}
+		scanedPeers[getPeerID(storeID, region)] = true
 	}
 	// There may be ranges that are covered by no one. Find these empty ranges, create new regions that cover them and evenly distribute newly created regions among all stores.
 	lastEnd := []byte("")

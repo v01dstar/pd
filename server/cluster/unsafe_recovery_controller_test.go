@@ -617,3 +617,53 @@ func (s *testUnsafeRecoverSuite) TestPlanExecution(c *C) {
 	c.Assert(recoveryController.numStoresPlanExecuted, Equals, 2)
 	c.Assert(recoveryController.stage, Equals, finished)
 }
+
+func (s *testUnsafeRecoverSuite) TestPlanGenerationKeepLearners(c *C) {
+	_, opt, _ := newTestScheduleConfig()
+	cluster := newTestRaftCluster(s.ctx, mockid.NewIDAllocator(), opt, core.NewStorage(kv.NewMemoryKV()), core.NewBasicCluster())
+	recoveryController := newUnsafeRecoveryController(cluster)
+	recoveryController.failedStores = map[uint64]string{
+		3: "",
+	}
+	recoveryController.storeReports = map[uint64]*pdpb.StoreReport{
+		1: {PeerReports: []*pdpb.PeerReport{
+			{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						EndKey:      []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2, Role: metapb.PeerRole_Learner}, {Id: 31, StoreId: 3}}}}},
+		}},
+		2: {PeerReports: []*pdpb.PeerReport{
+			{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          1,
+						EndKey:      []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							{Id: 11, StoreId: 1}, {Id: 21, StoreId: 2, Role: metapb.PeerRole_Learner}, {Id: 31, StoreId: 3}}}}},
+			{
+				RaftState: &raft_serverpb.RaftLocalState{LastIndex: 10},
+				RegionState: &raft_serverpb.RegionLocalState{
+					Region: &metapb.Region{
+						Id:          2,
+						StartKey:    []byte("c"),
+						RegionEpoch: &metapb.RegionEpoch{ConfVer: 1, Version: 2},
+						Peers: []*metapb.Peer{
+							{Id: 12, StoreId: 1}, {Id: 22, StoreId: 2}, {Id: 32, StoreId: 3}}}}},
+		}},
+	}
+	recoveryController.generateRecoveryPlan()
+	c.Assert(len(recoveryController.storeRecoveryPlans), Equals, 2)
+	store1Plan := recoveryController.storeRecoveryPlans[uint64(1)]
+	c.Assert(len(store1Plan.Updates), Equals, 1)
+	c.Assert(len(store1Plan.Updates[0].Peers), Equals, 2)
+	store2Plan := recoveryController.storeRecoveryPlans[uint64(2)]
+	c.Assert(len(store2Plan.Updates), Equals, 1)
+	c.Assert(len(store2Plan.Updates[0].Peers), Equals, 2)
+}
