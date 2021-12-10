@@ -50,7 +50,6 @@ type unsafeRecoveryController struct {
 	numStoresReported     int
 	storeRecoveryPlans    map[uint64]*pdpb.RecoveryPlan // StoreRecoveryPlan proto
 	executionResults      map[uint64]bool               // Execution reports for tracking purpose
-	executionReports      map[uint64]*pdpb.StoreReport  // Execution reports for tracking purpose
 	numStoresPlanExecuted int
 }
 
@@ -63,7 +62,6 @@ func newUnsafeRecoveryController(cluster *RaftCluster) *unsafeRecoveryController
 		numStoresReported:     0,
 		storeRecoveryPlans:    make(map[uint64]*pdpb.RecoveryPlan),
 		executionResults:      make(map[uint64]bool),
-		executionReports:      make(map[uint64]*pdpb.StoreReport),
 		numStoresPlanExecuted: 0,
 	}
 }
@@ -118,15 +116,10 @@ func (u *unsafeRecoveryController) HandleStoreHeartbeat(heartbeat *pdpb.StoreHea
 		}
 	case recovering:
 		if plan, tasked := u.storeRecoveryPlans[heartbeat.Stats.StoreId]; tasked {
-			if heartbeat.StoreReport == nil {
-				// Sends the recovering plan to the store for execution.
+			if !u.isPlanExecuted(heartbeat.Stats.StoreId) {
 				resp.Plan = plan
-			} else if !u.isPlanExecuted(heartbeat.Stats.StoreId, heartbeat.StoreReport) {
-				resp.Plan = plan
-				u.executionReports[heartbeat.Stats.StoreId] = heartbeat.StoreReport
 			} else {
 				u.executionResults[heartbeat.Stats.StoreId] = true
-				u.executionReports[heartbeat.Stats.StoreId] = heartbeat.StoreReport
 				u.numStoresPlanExecuted++
 				if u.numStoresPlanExecuted == len(u.storeRecoveryPlans) {
 					log.Info("Recover finished.")
@@ -149,36 +142,37 @@ func (u *unsafeRecoveryController) reset() {
 	u.numStoresReported = 0
 	u.storeRecoveryPlans = make(map[uint64]*pdpb.RecoveryPlan)
 	u.executionResults = make(map[uint64]bool)
-	u.executionReports = make(map[uint64]*pdpb.StoreReport)
 	u.numStoresPlanExecuted = 0
 }
 
-func (u *unsafeRecoveryController) isPlanExecuted(storeID uint64, report *pdpb.StoreReport) bool {
-	targetRegions := make(map[uint64]*metapb.Region)
-	toBeRemovedRegions := make(map[uint64]bool)
-	for _, create := range u.storeRecoveryPlans[storeID].Creates {
-		targetRegions[create.Id] = create
-	}
-	for _, update := range u.storeRecoveryPlans[storeID].Updates {
-		targetRegions[update.Id] = update
-	}
-	for _, del := range u.storeRecoveryPlans[storeID].Deletes {
-		toBeRemovedRegions[del] = true
-	}
+func (u *unsafeRecoveryController) isPlanExecuted(storeID uint64) bool {
 	numFinished := 0
-	for _, peerReport := range report.PeerReports {
-		region := peerReport.RegionState.Region
-		if _, ok := toBeRemovedRegions[region.Id]; ok {
-			return false
-		} else if target, ok := targetRegions[region.Id]; ok {
-			if bytes.Equal(target.StartKey, region.StartKey) && bytes.Equal(target.EndKey, region.EndKey) && !u.containsFailedPeers(region) {
-				numFinished += 1
-			} else {
-				return false
-			}
+	for _, create := range u.storeRecoveryPlans[storeID].Creates {
+		if u.cluster.GetRegion(create.Id) != nil {
+			numFinished += 1
 		}
 	}
-	return numFinished == len(targetRegions)
+	if numFinished != len(u.storeRecoveryPlans[storeID].Creates) {
+		return false
+	}
+	numFinished = 0
+	for _, update := range u.storeRecoveryPlans[storeID].Updates {
+		regionInfo := u.cluster.GetRegion(update.Id)
+		if regionInfo != nil && bytes.Equal(update.StartKey, regionInfo.GetStartKey()) && bytes.Equal(update.EndKey, regionInfo.GetEndKey()) && !u.containsFailedPeers(regionInfo.GetMeta()) {
+			numFinished += 1
+		}
+	}
+	if numFinished != len(u.storeRecoveryPlans[storeID].Updates) {
+		return false
+	}
+	numFinished = 0
+	for _, del := range u.storeRecoveryPlans[storeID].Deletes {
+		regionInfo := u.cluster.GetRegion(del)
+		if regionInfo == nil || regionInfo.GetStorePeer(storeID) == nil {
+			numFinished += 1
+		}
+	}
+	return numFinished == len(u.storeRecoveryPlans[storeID].Deletes)
 }
 
 type regionItem struct {
@@ -473,7 +467,7 @@ func (u *unsafeRecoveryController) Show() []string {
 		status = append(status, "Execution progess:")
 		for storeID, applied := range u.executionResults {
 			if !applied {
-				status = append(status, strconv.FormatUint(storeID, 10)+"not yet applied, last report: "+getStoreDigest(u.executionReports[storeID]))
+				status = append(status, strconv.FormatUint(storeID, 10)+"not yet applied")
 			}
 		}
 		return status
@@ -526,7 +520,6 @@ func (u *unsafeRecoveryController) History() []string {
 			} else {
 				executionDigest += "finished, "
 			}
-			executionDigest += getStoreDigest(u.executionReports[storeID])
 			history = append(history, executionDigest)
 		}
 	}
