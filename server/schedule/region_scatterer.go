@@ -31,6 +31,7 @@ import (
 	"github.com/tikv/pd/server/core"
 	"github.com/tikv/pd/server/schedule/filter"
 	"github.com/tikv/pd/server/schedule/operator"
+	"github.com/tikv/pd/server/schedule/placement"
 	"go.uber.org/zap"
 )
 
@@ -286,6 +287,7 @@ func (r *RegionScatterer) scatterRegion(region *core.RegionInfo, group string) *
 	ordinaryFilter := filter.NewOrdinaryEngineFilter(r.name)
 	ordinaryPeers := make(map[uint64]*metapb.Peer, len(region.GetPeers()))
 	specialPeers := make(map[string]map[uint64]*metapb.Peer)
+	oldFit := r.cluster.GetRuleManager().FitRegion(r.cluster, region)
 	// Group peers by the engine of their stores
 	for _, peer := range region.GetPeers() {
 		store := r.cluster.GetStore(peer.GetStoreId())
@@ -304,10 +306,14 @@ func (r *RegionScatterer) scatterRegion(region *core.RegionInfo, group string) *
 	}
 
 	targetPeers := make(map[uint64]*metapb.Peer, len(region.GetPeers()))                  // StoreID -> Peer
-	selectedStores := make(map[uint64]struct{}, len(region.GetPeers()))                   // StoreID set
+	selectedStores := make(map[uint64]struct{}, len(region.GetPeers()))                   // selected StoreID set
+	leaderCandidateStores := make([]uint64, 0, len(region.GetPeers()))                    // StoreID allowed to become Leader
 	scatterWithSameEngine := func(peers map[uint64]*metapb.Peer, context engineContext) { // peers: StoreID -> Peer
 		for _, peer := range peers {
 			if _, ok := selectedStores[peer.GetStoreId()]; ok {
+				if allowLeader(oldFit, peer) {
+					leaderCandidateStores = append(leaderCandidateStores, peer.GetStoreId())
+				}
 				// It is both sourcePeer and targetPeer itself, no need to select.
 				continue
 			}
@@ -321,6 +327,9 @@ func (r *RegionScatterer) scatterRegion(region *core.RegionInfo, group string) *
 				// This origin peer re-selects.
 				if _, ok := peers[newPeer.GetStoreId()]; !ok || peer.GetStoreId() == newPeer.GetStoreId() {
 					selectedStores[peer.GetStoreId()] = struct{}{}
+					if allowLeader(oldFit, peer) {
+						leaderCandidateStores = append(leaderCandidateStores, newPeer.GetStoreId())
+					}
 					break
 				}
 			}
@@ -331,7 +340,7 @@ func (r *RegionScatterer) scatterRegion(region *core.RegionInfo, group string) *
 	// FIXME: target leader only considers the ordinary stores, maybe we need to consider the
 	// special engine stores if the engine supports to become a leader. But now there is only
 	// one engine, tiflash, which does not support the leader, so don't consider it for now.
-	targetLeader := r.selectAvailableLeaderStore(group, region, targetPeers, r.ordinaryEngine)
+	targetLeader := r.selectAvailableLeaderStore(group, region, leaderCandidateStores, r.ordinaryEngine)
 	if targetLeader == 0 {
 		scatterCounter.WithLabelValues("no-leader", "").Inc()
 		return nil
@@ -367,6 +376,22 @@ func (r *RegionScatterer) scatterRegion(region *core.RegionInfo, group string) *
 		op.SetPriorityLevel(core.HighPriority)
 	}
 	return op
+}
+
+func allowLeader(fit *placement.RegionFit, peer *metapb.Peer) bool {
+	switch peer.GetRole() {
+	case metapb.PeerRole_Learner, metapb.PeerRole_DemotingVoter:
+		return false
+	}
+	peerFit := fit.GetRuleFit(peer.GetId())
+	if peerFit == nil || peerFit.Rule == nil {
+		return false
+	}
+	switch peerFit.Rule.Role {
+	case placement.Voter, placement.Leader:
+		return true
+	}
+	return false
 }
 
 func isSameDistribution(region *core.RegionInfo, targetPeers map[uint64]*metapb.Peer, targetLeader uint64) bool {
@@ -448,27 +473,19 @@ func (r *RegionScatterer) selectStore(group string, peer *metapb.Peer, sourceSto
 
 // selectAvailableLeaderStore select the target leader store from the candidates. The candidates would be collected by
 // the existed peers store depended on the leader counts in the group level. Please use this func before scatter spacial engines.
-func (r *RegionScatterer) selectAvailableLeaderStore(group string, region *core.RegionInfo, peers map[uint64]*metapb.Peer, context engineContext) uint64 {
+func (r *RegionScatterer) selectAvailableLeaderStore(group string, region *core.RegionInfo, leaderCandidateStores []uint64, context engineContext) uint64 {
 	sourceStore := r.cluster.GetStore(region.GetLeader().GetStoreId())
 	if sourceStore == nil {
 		log.Error("failed to get the store", zap.Uint64("store-id", region.GetLeader().GetStoreId()), errs.ZapError(errs.ErrGetSourceStore))
 		return 0
 	}
-	leaderCandidateStores := make([]uint64, 0)
-	// use PlacementLeaderSafeguard for filtering follower and learner in rule
-	filter := filter.NewPlacementLeaderSafeguard(r.name, r.cluster.GetOpts(), r.cluster.GetBasicCluster(), r.cluster.GetRuleManager(), region, sourceStore, true /*allowMoveLeader*/)
-	for storeID := range peers {
-		store := r.cluster.GetStore(storeID)
-		if store == nil {
-			return 0
-		}
-		if filter == nil || filter.Target(r.cluster.GetOpts(), store) {
-			leaderCandidateStores = append(leaderCandidateStores, storeID)
-		}
-	}
 	minStoreGroupLeader := uint64(math.MaxUint64)
 	id := uint64(0)
 	for _, storeID := range leaderCandidateStores {
+		store := r.cluster.GetStore(storeID)
+		if store == nil {
+			continue
+		}
 		storeGroupLeaderCount := context.selectedLeader.Get(storeID, group)
 		if minStoreGroupLeader > storeGroupLeaderCount {
 			minStoreGroupLeader = storeGroupLeaderCount
