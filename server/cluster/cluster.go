@@ -66,6 +66,8 @@ var (
 	DefaultMinResolvedTSPersistenceInterval = config.DefaultMinResolvedTSPersistenceInterval
 	regionUpdateCacheEventCounter           = regionEventCounter.WithLabelValues("update_cache")
 	regionUpdateKVEventCounter              = regionEventCounter.WithLabelValues("update_kv")
+
+	denySchedulersByLabelerCounter = schedule.LabelerEventCounter.WithLabelValues("schedulers", "deny")
 )
 
 // regionLabelGCInterval is the interval to run region-label's GC work.
