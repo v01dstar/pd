@@ -130,6 +130,7 @@ func (c *coordinator) patrolRegions() {
 			return
 		}
 		if allowed, _ := c.cluster.CheckSchedulingAllowance(); !allowed {
+			log.Info("skip patrol regions due to scheduling allowance")
 			continue
 		}
 
@@ -940,6 +941,7 @@ func (s *scheduleController) AllowSchedule(diagnosable bool) bool {
 	}
 	allowed, _ := s.cluster.CheckSchedulingAllowance()
 	if !allowed {
+		log.Info("schedule is not allowed to do", zap.String("scheduler-name", s.GetName()))
 		if diagnosable {
 			s.diagnosticRecorder.setResultFromStatus(halted)
 		}

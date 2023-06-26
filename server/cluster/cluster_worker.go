@@ -44,6 +44,7 @@ func (c *RaftCluster) HandleRegionHeartbeat(region *core.RegionInfo) error {
 // HandleAskSplit handles the split request.
 func (c *RaftCluster) HandleAskSplit(request *pdpb.AskSplitRequest) (*pdpb.AskSplitResponse, error) {
 	if allowed, err := c.CheckSchedulingAllowance(); !allowed {
+		log.Info("reject split request due to scheduling allowance", zap.Uint64("region-id", request.Region.Id))
 		return nil, err
 	}
 	if !c.opt.IsTikvRegionSplitEnabled() {
@@ -106,6 +107,7 @@ func (c *RaftCluster) ValidRequestRegion(reqRegion *metapb.Region) error {
 // HandleAskBatchSplit handles the batch split request.
 func (c *RaftCluster) HandleAskBatchSplit(request *pdpb.AskBatchSplitRequest) (*pdpb.AskBatchSplitResponse, error) {
 	if allowed, err := c.CheckSchedulingAllowance(); !allowed {
+		log.Info("reject batch split request due to scheduling allowance", zap.Uint64("region-id", request.Region.Id))
 		return nil, err
 	}
 	if !c.opt.IsTikvRegionSplitEnabled() {
