@@ -183,20 +183,20 @@ func (u *unsafeRecoveryController) RemoveFailedStores(failedStores map[uint64]st
 		}
 
 		// validate the stores and mark the store as tombstone forcibly
-		for failedStore := range failedStores {
-			store := u.cluster.GetStore(failedStore)
-			if store == nil {
-				return errs.ErrUnsafeRecoveryInvalidInput.FastGenByArgs(fmt.Sprintf("store %v doesn't exist", failedStore))
-			} else if (store.IsPreparing() || store.IsServing()) && !store.IsDisconnected() {
-				return errs.ErrUnsafeRecoveryInvalidInput.FastGenByArgs(fmt.Sprintf("store %v is up and connected", failedStore))
-			}
-		}
-		for failedStore := range failedStores {
-			err := u.cluster.BuryStore(failedStore, true)
-			if err != nil && !errors.ErrorEqual(err, errs.ErrStoreNotFound.FastGenByArgs(failedStore)) {
-				return err
-			}
-		}
+		// for failedStore := range failedStores {
+		// 	store := u.cluster.GetStore(failedStore)
+		// 	if store == nil {
+		// 		return errs.ErrUnsafeRecoveryInvalidInput.FastGenByArgs(fmt.Sprintf("store %v doesn't exist", failedStore))
+		// 	} else if (store.IsPreparing() || store.IsServing()) && !store.IsDisconnected() {
+		// 		return errs.ErrUnsafeRecoveryInvalidInput.FastGenByArgs(fmt.Sprintf("store %v is up and connected", failedStore))
+		// 	}
+		// }
+		// for failedStore := range failedStores {
+		// 	err := u.cluster.BuryStore(failedStore, true)
+		// 	if err != nil && !errors.ErrorEqual(err, errs.ErrStoreNotFound.FastGenByArgs(failedStore)) {
+		// 		return err
+		// 	}
+		// }
 	}
 
 	u.reset()
@@ -706,9 +706,9 @@ func (u *unsafeRecoveryController) getFailedPeers(region *metapb.Region) []*meta
 
 	var failedPeers []*metapb.Peer
 	for _, peer := range region.Peers {
-		if peer.Role == metapb.PeerRole_Learner || peer.Role == metapb.PeerRole_DemotingVoter {
-			continue
-		}
+		// if peer.Role == metapb.PeerRole_Learner || peer.Role == metapb.PeerRole_DemotingVoter {
+		// 	continue
+		// }
 		if u.isFailed(peer) {
 			failedPeers = append(failedPeers, peer)
 		}
