@@ -55,9 +55,7 @@ type GlobalConfigItem struct {
 // RPCClient is a PD (Placement Driver) RPC and related mcs client which can only call RPC.
 type RPCClient interface {
 	// GetAllMembers gets the members Info from PD
-	GetAllMembers(ctx context.Context) ([]*pdpb.Member, error)
-	// GetLeader gets the current leader and etcd leader from PD
-	GetLeaders(ctx context.Context) (leader *pdpb.Member, etcdLeader *pdpb.Member, err error)
+	GetAllMembers(ctx context.Context) (*pdpb.GetMembersResponse, error)
 	// GetStore gets a store from PD by store id.
 	// The store may expire later. Caller is responsible for caching and taking care
 	// of store change.
@@ -471,7 +469,7 @@ func (c *client) UpdateOption(option opt.DynamicOption, value any) error {
 }
 
 // GetAllMembers gets the members Info from PD.
-func (c *client) GetAllMembers(ctx context.Context) ([]*pdpb.Member, error) {
+func (c *client) GetAllMembers(ctx context.Context) (*pdpb.GetMembersResponse, error) {
 	start := time.Now()
 	defer func() { metrics.CmdDurationGetAllMembers.Observe(time.Since(start).Seconds()) }()
 
@@ -486,26 +484,7 @@ func (c *client) GetAllMembers(ctx context.Context) ([]*pdpb.Member, error) {
 	if err = c.respForErr(metrics.CmdFailedDurationGetAllMembers, start, err, resp.GetHeader()); err != nil {
 		return nil, err
 	}
-	return resp.GetMembers(), nil
-}
-
-// GetLeaders gets the leader and etcd leader from PD.
-func (c *client) GetLeaders(ctx context.Context) (leader *pdpb.Member, etcdLeader *pdpb.Member, err error) {
-	start := time.Now()
-	defer func() { metrics.CmdDurationGetLeaders.Observe(time.Since(start).Seconds()) }()
-
-	ctx, cancel := context.WithTimeout(ctx, c.inner.option.Timeout)
-	defer cancel()
-	req := &pdpb.GetMembersRequest{Header: c.requestHeader()}
-	protoClient, ctx := c.getClientAndContext(ctx)
-	if protoClient == nil {
-		return nil, nil, errs.ErrClientGetProtoClient
-	}
-	resp, err := protoClient.GetMembers(ctx, req)
-	if err = c.respForErr(metrics.CmdFailedDurationGetLeaders, start, err, resp.GetHeader()); err != nil {
-		return nil, nil, err
-	}
-	return resp.GetLeader(), resp.GetEtcdLeader(), nil
+	return resp, nil
 }
 
 // getClientAndContext returns the leader pd client and the original context. If leader is unhealthy, it returns
